@@ -1,4 +1,4 @@
-/** Server configuration: data root, examples directory, upload limits, request and compile bounds. */
+/** Server configuration: data root, examples directory, upload limits, request and compile bounds, rank settings. */
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -31,11 +31,22 @@ export interface Bounds {
   readonly maxPlanNodes: number;
 }
 
+/** Rank/influence diagnostics (memo §3.2, §3.3). */
+export interface RankConfig {
+  /** Single-node pruning budget ε_TV in (0, 1]; read back exactly from its decimal form. */
+  readonly pruneEpsTv: number;
+  /** PageRank iteration cap. */
+  readonly maxIterations: number;
+  /** Row-pair comparisons per rank request; past it a coefficient is unknown (counted as 1). */
+  readonly maxComparisons: number;
+}
+
 export interface ServerConfig {
   readonly dataDir: string;
   readonly examplesDir: string;
   readonly upload: UploadLimits;
   readonly bounds: Bounds;
+  readonly rank: RankConfig;
 }
 
 export const DEFAULT_UPLOAD: UploadLimits = Object.freeze({
@@ -55,11 +66,18 @@ export const DEFAULT_BOUNDS: Bounds = Object.freeze({
   maxPlanNodes: 100_000,
 });
 
+export const DEFAULT_RANK: RankConfig = Object.freeze({
+  pruneEpsTv: 0.05,
+  maxIterations: 10_000,
+  maxComparisons: 1_000_000,
+});
+
 export interface ConfigOverrides {
   readonly dataDir?: string;
   readonly examplesDir?: string;
   readonly upload?: Partial<UploadLimits>;
   readonly bounds?: Partial<Bounds>;
+  readonly rank?: Partial<RankConfig>;
 }
 
 /** Env var → config key; values must be positive integers. */
@@ -77,11 +95,26 @@ const BOUNDS_ENV = {
   C2P_MAX_FACTOR_ENTRIES: "maxFactorEntries",
   C2P_MAX_PLAN_NODES: "maxPlanNodes",
 } as const;
+const RANK_ENV = {
+  C2P_RANK_MAX_ITER: "maxIterations",
+  C2P_RANK_MAX_COMPARISONS: "maxComparisons",
+} as const;
+const EPS_ENV = "C2P_PRUNE_EPS_TV";
+const DECIMAL = /^(?:[0-9]+\.?[0-9]*|\.[0-9]+)(?:[eE][-+]?[0-9]+)?$/;
 
 function positiveInt(value: unknown, name: string): number {
   const n = typeof value === "string" && /^[0-9]+$/.test(value.trim()) ? Number(value.trim()) : value;
   if (typeof n !== "number" || !Number.isSafeInteger(n) || n < 1) {
     throw new Error(`config ${name}: expected a positive integer, got ${JSON.stringify(value)}`);
+  }
+  return n;
+}
+
+/** A decimal in (0, 1]; its shortest decimal form is the exact ε. */
+function epsTv(value: unknown, name: string): number {
+  const n = typeof value === "string" && DECIMAL.test(value.trim()) ? Number(value.trim()) : value;
+  if (typeof n !== "number" || !Number.isFinite(n) || !(n > 0 && n <= 1)) {
+    throw new Error(`config ${name}: expected a decimal in (0, 1], got ${JSON.stringify(value)}`);
   }
   return n;
 }
@@ -116,10 +149,21 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, overrides: Conf
   const bounds = { ...DEFAULT_BOUNDS, ...fromEnv(env, BOUNDS_ENV), ...overrides.bounds };
   for (const key of ["maxFiles", "maxFileBytes", "maxTotalBytes"] as const) positiveInt(upload[key], key);
   for (const key of Object.keys(DEFAULT_BOUNDS) as (keyof Bounds)[]) positiveInt(bounds[key], key);
+  const rawEps = env[EPS_ENV];
+  const rank = {
+    ...DEFAULT_RANK,
+    ...fromEnv(env, RANK_ENV),
+    ...(rawEps !== undefined && rawEps !== "" ? { pruneEpsTv: epsTv(rawEps, EPS_ENV) } : {}),
+    ...overrides.rank,
+  };
+  positiveInt(rank.maxIterations, "maxIterations");
+  positiveInt(rank.maxComparisons, "maxComparisons");
+  epsTv(rank.pruneEpsTv, "pruneEpsTv");
   return Object.freeze({
     dataDir,
     examplesDir,
     upload: Object.freeze({ ...upload, allowedExtensions: extensions(upload.allowedExtensions) }),
     bounds: Object.freeze(bounds),
+    rank: Object.freeze(rank),
   });
 }

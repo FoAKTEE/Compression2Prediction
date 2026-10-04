@@ -1,21 +1,31 @@
 /**
  * `/api/forecast`: request validation (bounds, half-open intervention windows,
  * query kind), exact forecast execution against the latest compiled plan
- * (a published run directory plus a report), run listing, and
- * project-scoped run lookups. Rank diagnostics answer 501 until N6.
+ * (a published run directory plus a report), run listing,
+ * project-scoped run lookups, and rank/influence diagnostics (D22).
  */
 import { isPlainObject } from "@c2p/core";
 import type { FastifyInstance } from "fastify";
 import type { Bounds } from "../config.js";
 import type { AppContext } from "../context.js";
 import { repoSha } from "../forecast/repoSha.js";
+import { rankRun } from "../forecast/rank.js";
 import { executeForecast } from "../forecast/service.js";
 import type { ForecastResult } from "../forecast/types.js";
 import { nameParam } from "../ids.js";
-import type { ForecastRequest, Intervention, InterventionKind, ListRunsResponse, QueryKind } from "../wire.js";
+import { RANK_SCENARIOS } from "../wire.js";
+import type {
+  ForecastRequest,
+  Intervention,
+  InterventionKind,
+  ListRunsResponse,
+  QueryKind,
+  RankDiagnosticsResponse,
+  RankScenario,
+} from "../wire.js";
 import { requireProject } from "./common.js";
 import type { ProjectParams } from "./common.js";
-import { notFound, notImplemented, unprocessable } from "./errors.js";
+import { badRequest, notFound, unprocessable } from "./errors.js";
 
 const REQUEST_FIELDS = new Set([
   "scenario_id",
@@ -161,6 +171,18 @@ interface RunParams extends ProjectParams {
   runId: string;
 }
 
+/** `?scenario=baseline|intervention` (default `baseline`); anything else is 400 `invalid_query`. */
+function rankScenario(query: unknown): RankScenario {
+  const q = (query ?? {}) as Record<string, unknown>;
+  const unknown = Object.keys(q).filter((k) => k !== "scenario");
+  if (unknown.length) throw badRequest("invalid_query", `unknown query parameter(s) ${unknown.sort().join(", ")}`);
+  if (q.scenario === undefined) return "baseline";
+  if (typeof q.scenario !== "string" || !RANK_SCENARIOS.includes(q.scenario as RankScenario)) {
+    throw badRequest("invalid_query", `scenario: expected one of ${RANK_SCENARIOS.join(", ")}`);
+  }
+  return q.scenario as RankScenario;
+}
+
 export function registerForecastRoutes(app: FastifyInstance, ctx: AppContext): void {
   // Read once at startup; recorded in every run manifest.
   const sha = repoSha();
@@ -194,8 +216,11 @@ export function registerForecastRoutes(app: FastifyInstance, ctx: AppContext): v
     requireRun(req.params.projectId, req.params.runId),
   );
 
-  app.get<{ Params: RunParams }>("/api/forecast/projects/:projectId/runs/:runId/rank", async (req) => {
-    requireRun(req.params.projectId, req.params.runId);
-    throw notImplemented("rank/influence diagnostics are not available yet");
-  });
+  app.get<{ Params: RunParams }>(
+    "/api/forecast/projects/:projectId/runs/:runId/rank",
+    async (req): Promise<RankDiagnosticsResponse> => {
+      const run = requireRun(req.params.projectId, req.params.runId);
+      return rankRun(ctx, run, rankScenario(req.query));
+    },
+  );
 }

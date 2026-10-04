@@ -136,7 +136,8 @@ function resolveInterventions(req: ForecastRequest, keys: Map<string, KeyInfo>):
   });
 }
 
-function toCore(iv: Intervention): HardIntervention {
+/** A resolved wire intervention as a core hard intervention. */
+export function toCore(iv: Intervention): HardIntervention {
   return {
     kind: "hard",
     target_variable: iv.target_variable,

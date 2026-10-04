@@ -526,6 +526,48 @@ export interface ForecastResult extends ForecastRun {
   uncertainty: ForecastUncertainty;
 }
 
+// ---------------------------------------------------------------- rank diagnostics
+
+export interface RankEntry {
+  /** A variable's canonical key string, or `<mechanism_id>@t<time_index>` for a writer. */
+  node_id: string;
+  node_kind: "variable" | "mechanism";
+  /** Reverse PPR score; a mechanism carries its output key's score. */
+  score: number;
+  /** Exact path bound w_j; `null` when it depends on an unknown or over-budget coefficient. */
+  influence_bound: number | null;
+  certified_prunable: boolean;
+}
+
+export interface RankDiagnostics {
+  run_id: string;
+  method: string;
+  entries: RankEntry[];
+  /** Ranking must never change kernels. */
+  kernel_hashes_unchanged: boolean;
+}
+
+export type RankScenario = "baseline" | "intervention";
+export const RANK_SCENARIOS: readonly RankScenario[] = Object.freeze(["baseline", "intervention"]);
+
+/** `GET /api/forecast/projects/:id/runs/:runId/rank?scenario=baseline|intervention` (D22). */
+export interface RankDiagnosticsResponse extends RankDiagnostics {
+  /** The run's target at its final horizon step: the PPR seed and the bound target. */
+  target_key: KeyJson;
+  scenario: RankScenario;
+  damping: number;
+  /** residual / (1 - damping) of the returned scores. */
+  residual_bound: number;
+  iterations: number;
+  /** Single-node certificate budget (config `C2P_PRUNE_EPS_TV`). */
+  eps_tv: number;
+  /** Content hash of the core `ppr` ScoreArtifact over the target's backward slice. */
+  score_artifact_hash: string;
+  /** Content hash of the core `tv_path_bound` ScoreArtifact over the ranked plan. */
+  bounds_hash: string;
+  note: string;
+}
+
 // ---------------------------------------------------------------- report
 
 export interface ScenarioForecast {

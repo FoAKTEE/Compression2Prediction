@@ -144,7 +144,8 @@ describe("runs are scoped to their project", () => {
     expect(own.json()).toEqual(run(a, "run_alpha"));
     expectError(await app.inject({ method: "GET", url: `/api/forecast/projects/${b}/runs/run_alpha` }), 404, "run_not_found");
     expectError(await app.inject({ method: "GET", url: `/api/forecast/projects/${b}/runs/run_alpha/rank` }), 404, "run_not_found");
-    expectError(await app.inject({ method: "GET", url: `/api/forecast/projects/${a}/runs/run_alpha/rank` }), 501, "not_implemented");
+    // A bare row records no plan to rebuild.
+    expectError(await app.inject({ method: "GET", url: `/api/forecast/projects/${a}/runs/run_alpha/rank` }), 409, "run_not_rankable");
 
     const listA = (await app.inject({ method: "GET", url: `/api/forecast/projects/${a}/runs` })).json();
     expect(Object.keys(listA)).toEqual(["runs"]);
@@ -405,7 +406,7 @@ describe("forecast execution: the guide §13 incident example", () => {
 
     expectError(await app.inject({ method: "GET", url: `/api/forecast/projects/${b}/runs/${second.run_id}` }), 404, "run_not_found");
     expect((await app.inject({ method: "GET", url: `/api/forecast/projects/${b}/runs` })).json()).toEqual({ runs: [] });
-    expectError(await app.inject({ method: "GET", url: `/api/forecast/projects/${a}/runs/${second.run_id}/rank` }), 501, "not_implemented");
+    expect((await app.inject({ method: "GET", url: `/api/forecast/projects/${a}/runs/${second.run_id}/rank` })).statusCode).toBe(200);
     expectError(await app.inject({ method: "GET", url: `/api/forecast/projects/${b}/runs/${second.run_id}/rank` }), 404, "run_not_found");
   });
 

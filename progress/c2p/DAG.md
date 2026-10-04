@@ -479,7 +479,7 @@ follow-up: core transition.v1 needs an `unknown` activity status valid only with
 
 ### N11 — API server
 
-- status: `in-progress`
+- status: `done`
 - depends: N3 (routes grow with N4–N9)
 - substages: skeleton (wave 3) → route groups `/api/world`, `/api/model`,
   `/api/forecast`, `/api/report` + persisted tasks as N4–N9 land (`server/src/api/`;
@@ -490,17 +490,16 @@ follow-up: core transition.v1 needs an `unknown` activity status valid only with
   - tasks survive a restart
   - the report endpoint returns `missing` (not a number) for absent calibration
   - no network
-- commits: b320c11, e74c8ae, 5331c87, and the `feat(api)` contract-completion commit; rank route pending
+- commits: b320c11, e74c8ae, 5331c87, 61c968e, and the `feat(api)` rank-route commit
 - verifier (run by the orchestrator):
 
 ```text
-$ npx vitest run --project server
- ✓ |server| packages/server/test/api.contract.test.ts (10 tests) 2532ms
- Test Files  20 passed (20)
-      Tests  151 passed (151)
+$ npx vitest run packages/server/test/api.rank.test.ts packages/server/test/api.forecast.test.ts
+ Test Files  2 passed (2)
+      Tests  23 passed (23)
 $ npx tsc -b packages/server packages/server/test -> exit 0
-contract: project gains model_version/plan_version/last_compile_ok/latest_run_id/latest_report_id; world change clears model/plan/compile; task, run, report listings; GET model; exact wire types in src/wire.ts
-pending: rank diagnostics route (N6.rank)
+incident baseline rank: target score 0.4783 = 1/(1+d+d^2/3); crew@1 bound 0.3, crew@0 0.27, status@1 0.9, supply bound 0 -> certified_prunable; kernel_hashes_unchanged true
+caveat: certificates still subject to review findings F01/F02 (fix set X pending)
 ```
 
 ### N12 — Frontend scaffold

@@ -643,3 +643,107 @@ say so explicitly and never rewrite history.
   - Adding `plan_version` and `last_compile_ok` columns to `projects`.
     Rejected: existing state files would need a migration, while a new
     table is created in place (as in D18).
+
+## D22 — Rank/influence diagnostics of a forecast run: reverse PPR, exact path bounds, single-node certificates
+
+- date: 2026-10-04
+- decision:
+  - Route: `GET /api/forecast/projects/:id/runs/:runId/rank?scenario=baseline|intervention`
+    replaces the 501. The default is `baseline`. Errors:
+    - 404 `run_not_found`: the run belongs to another project;
+    - 400 `invalid_query`: any other scenario value, a repeated value, or an unknown parameter;
+    - 422 `no_intervention`: `scenario=intervention` on a run without interventions;
+    - 409 `run_not_rankable`: a bare run row that records no plan, model, and world versions;
+    - 422 `rank_not_converged`: the iteration cap is reached, with the core diagnostic as the message.
+  - Plan: the run's plan is rebuilt from the versions the run recorded
+    (`plan_version`, `model_version`, `provenance.world_version`).
+    `loadRunPlan` recompiles it the way the forecast service does. The graph
+    and model hashes must match both the stored plan and the run, or the
+    answer is 500 `integrity_error`. Artifacts are immutable, so a past run
+    still ranks after a world change clears the project's model (D21). For
+    `intervention`, the run's resolved hard interventions are replayed with
+    core `applyInterventions`, and the result must reproduce the run's
+    `intervened_model_hash`.
+  - Ranked graph (memo §3.1): the backward slice (core `sliceFromPlan`) of
+    the target key `(plan scenario, target_variable, target_entity_id, h)`
+    for the run's final step h. A root target is its own one-vertex slice.
+    Ranking uses core `pagerank`: reverse, unit edge and port weights,
+    damping 0.85, tolerance 1e-10, cap 10,000 (`C2P_RANK_MAX_ITER`). Core
+    `pagerank` is called directly, so the server gets the non-convergence
+    diagnostic instead of the exception from `rankPlan`. The scores are then
+    sealed exactly as `rankPlan` seals them, with `scoreArtifact` and
+    `pprParameters` (plan horizon, plus the intervened model hash as
+    `interventions_ref`). The envelope is `assumed`, like model and plan
+    artifacts, with version `rank.v1`.
+  - Exact influence (memo §3.3): each kernel entry x is read back as
+    `Rational.parse(String(x))`. This is the exact value of its shortest
+    decimal literal, so 0.6 becomes 3/5. Core `nodeCoefficients` checks
+    these rows against the float kernel to 1e-12 and needs each row to sum
+    to exactly 1. Coefficients are unknown, and conservatively 1, in two
+    cases:
+    - a writer whose decimal rows are not exactly stochastic (e.g. three 1/3 floats);
+    - groups past the per-request comparison budget (`C2P_RANK_MAX_COMPARISONS`, default 1,000,000).
+    Core `targetBounds` runs on the ranked plan. Only slice writers get
+    coefficients, because the rest cannot reach the target.
+    `influence_bound` is w_j as a number. It is `null` where w_j depends on
+    an unknown coefficient along a path with nonzero coefficients.
+  - Entries: every slice key (`variable`, `node_id` = canonical key string)
+    and every slice writer (`mechanism`, `node_id` =
+    `<mechanism_id>@t<time_index>`). The anchor tick is the output tick
+    minus the template's output offset. Surgery nodes have offset 0, e.g.
+    `do(crew_capacity=high)@t0`. If two writers would share an id, the
+    output entity is appended as `/<entity_id>`. A writer reports its output
+    key's score and bound. Entries are sorted by decreasing score, then by
+    `node_id` in code-point order.
+  - Certificates: `certified_prunable` comes from core `certifyRemovals` for
+    that key alone, with defect 1 and ε from `C2P_PRUNE_EPS_TV` (default
+    0.05, a decimal in (0, 1], read back exactly). Defect 1 covers
+    replacing the writer (or a root's prior) with any constant kernel, so no
+    specific replacement is declared. The certificate is given only when the
+    run's `prediction_scope.conditioning` is `none`. A missing scope counts
+    as conditioned, and then nothing is certified. Each certificate covers
+    one node. Pruning several nodes needs the cumulative budget
+    B_D = min(1, Σ w_j e_j) over the whole set, never these flags combined.
+  - Response: the contract's `RankDiagnostics` plus `target_key`,
+    `scenario`, `damping`, `residual_bound`, `iterations`, `eps_tv`,
+    `score_artifact_hash`, `bounds_hash` (the core `boundsArtifact`
+    content hash), and the fixed `note`: "Scores order computation and
+    review only; they are not causal effects and never change kernel
+    probabilities." `kernel_hashes_unchanged` compares core `kernelHashes`
+    of the ranked plan before and after. A change is 500 `integrity_error`,
+    so a served response always carries `true`. `method` is
+    `reverse_ppr+tv_path_bound`. Nothing is stored, and the run record is
+    not modified.
+  - Incident example. Baseline: π_T = 1/(1+d+d²/3). The bounds are
+    status@1 9/10, status@0 81/100, crew@1 3/10, crew@0 27/100, and supply 0.
+    Supply has one value, so the kernel cannot vary with it, and only the
+    supply keys are certified at 0.05. With the crew intervention, the
+    clamped crew writers have no inputs and keep bounds 3/10 and 27/100,
+    since the incident kernel is unchanged.
+- why: memo §3.1 ranks the compiled, intervention-adjusted, finite-horizon
+  mechanism graph on the query slice. §3.3 admits certificates only from
+  exact rationals or proved bounds. Reading entries back as decimal literals
+  recovers the hand-specified values, and Python's `Fraction(str(x))` does
+  the same. PPR and kernel influence disagree here as in memo §5.2: crew and
+  supply have the same PPR score, but their bounds are 0.3 and 0. The note
+  and the single-node scope keep the scores from being read as causal
+  effects or as a pruning license (invariant 9, memo §3.1 "No centrality
+  score is a causal effect").
+- alternatives:
+  - `Rational.fromNumber` (the exact binary value). Rejected: 0.6 is not
+    3/5 in binary, so rows do not sum to 1 and every coefficient would be
+    unknown.
+  - Rebuilding from the project's current plan. Rejected: after a model or
+    world change it is no longer the plan the run queried.
+  - An exact per-writer defect (the best constant). Rejected for the flag:
+    a point-mass prior would then make crew prunable, and the flag is meant
+    as the conservative "any constant replacement".
+  - Returning `kernel_hashes_unchanged: false`. Rejected: a ranking that
+    changed a kernel is a server fault.
+  - Cumulative certificates over several nodes. Deferred: they need a
+    request field naming the removal set.
+- next: a cumulative removal-set certificate endpoint (`certifyRemovals`
+  over a declared set, with replacement kernels). Extend the frontend
+  contract with the response extensions (N14). A separately typed review
+  ranking over the knowledge and event graphs belongs to the N8 follow-on
+  (memo §3.1), not this route.
