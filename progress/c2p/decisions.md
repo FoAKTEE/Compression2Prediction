@@ -131,3 +131,47 @@ say so explicitly and never rewrite history.
   and memo §4.4. It lets N7.1–N7.3 run in parallel with N4/N5.
 - alternatives: Treat N7 as a single node after N5 (rejected: serializes the
   critical path for no benefit).
+
+## D9 — Full TypeScript/Node monorepo; Python becomes the test oracle
+
+- date: 2026-10-04
+- decision: The product is a TypeScript/Node monorepo: `@c2p/core` (zero runtime
+  dependencies), `@c2p/server` (Fastify API, store, extraction, adapters), and a
+  `frontend` workspace. The committed Python (N1 kernels, N2 world schemas and
+  registry) moves to `reference/python/` and generates golden fixtures that the
+  TypeScript core must reproduce. It is not part of the product.
+- why: user directive to prioritize a Node.js implementation with a frontend
+  similar to MiroFish's; MiroFish's own frontend is Node/Vue.
+- alternatives: Python core + Python HTTP API + Vue frontend (exact MiroFish
+  split); Node server calling a Python core as a subprocess. Both rejected by
+  the user.
+
+## D10 — Frontend: Vue 3 + Vite + D3, MiroFish's five-step flow, new code
+
+- date: 2026-10-04
+- decision: Vue 3 + Vite + vue-router + vue-i18n (en, zh) + axios + d3, with a
+  Home view and a STEP 01–05 Process flow re-scoped to world build → model setup
+  → forecast & simulate → report → interaction, plus World and Mechanism graph
+  views. Code is written fresh, not copied.
+- why: user directive ("similar front end"); MiroFish is AGPL-3.0, so copying
+  its components would make the frontend derived code.
+- alternatives: same stack with a forecast-first layout; porting MiroFish's Vue
+  components.
+
+## D11 — Cross-language parity rules
+
+- date: 2026-10-04
+- decision: Wire JSON keeps the guide's snake_case field names; TS functions
+  are camelCase. `fsum` uses Shewchuk exact rounding to match Python
+  `math.fsum`; certificates use a BigInt `Rational`. The TS canonical JSON is
+  authoritative; golden tests compare decoded values and verdicts, never hashes
+  across languages (Python writes `1.0`, JS writes `1`).
+- why: keep the oracle useful without forcing byte-identical float formatting.
+- alternatives: a shared canonical number format implemented in both languages.
+
+## D12 — N3 Python store abandoned before implementation
+
+- date: 2026-10-04
+- decision: The Python N3 store worker was stopped before writing files; N3 is
+  implemented directly in `@c2p/server`. The Python oracle covers N1 and N2 only.
+- why: the store is not numerical, so a Python oracle adds no parity value.
