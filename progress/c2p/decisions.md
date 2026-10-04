@@ -241,3 +241,74 @@ say so explicitly and never rewrite history.
   TypeError. Verified before and after the rename.
 - alternatives: keep `then` and wrap kernels before crossing async boundaries
   (rejected: easy to forget, fails at runtime).
+
+## D16 — N11 server: mutable project state vs immutable artifacts, persisted tasks, one error shape
+
+- date: 2026-10-04
+- decision:
+  - Data root: `C2P_DATA_DIR`, default `<repo>/data` (gitignored). Layout:
+    `state.sqlite3` (mutable state), `uploads/` (content-addressed upload
+    blobs, `<hex[:2]>/<hex>` by sha256), `artifacts/` (the N3 ArtifactStore).
+    `buildApp({dataDir})` takes an injected root; tests use a temp dir each.
+    Upload limits and request bounds live in `src/config.ts` (env-overridable).
+  - Split: projects, file records, tasks, and run/report index rows are
+    mutable rows in `state.sqlite3`. Worlds (and later models) are immutable
+    artifacts; a project row only records the current `world_version` /
+    `model_version`, which is the artifact content hash. The ArtifactStore
+    namespace (`scenario_id` of the artifact envelope) is the project ID, so
+    one project can never read another's artifacts; the world records' own
+    scenario (default `baseline`) lives inside the payload. A world bundle's
+    envelope origin is the weakest origin it contains (assumed < extracted <
+    observed); every record keeps its own origin, and `simulated` records are
+    rejected from the canonical world.
+  - World import (`PUT .../world`) decodes every record with core constructors
+    and `Entity.fromJson`, runs `validateLinks`, and stores a canonical payload
+    (roles sharing the holder's envelope embedded, others standalone), so equal
+    worlds get equal versions. `expected_world_version` is an optional
+    compare-and-set precondition (409 `version_conflict` on mismatch).
+  - IDs are server-generated (`proj_`/`task_`/`file_` + 24 hex) and every route
+    checks `validateName` plus the exact shape (400 `invalid_id`). Runs and
+    reports are always looked up through their owning project.
+  - Tasks are persisted rows run by an in-process FIFO runner with registered
+    job kinds. Restart policy: on startup, every task left `pending` or
+    `running` becomes `failed` with error `interrupted_by_restart`, and a
+    project left `extracting` falls back to its previous status (or `failed`).
+    Terminal tasks never change. Extraction is a job kind registered only when
+    an `Extractor` is supplied (N8); otherwise the route answers 501.
+  - Errors: one body `{error: {code, message}}`, never a stack. 400 malformed
+    request/ID; 404 unknown resource or route; 409 version or lifecycle
+    conflict; 413 upload limits; 415 wrong media type; 422 core `ValueError`,
+    invalid world, out-of-bounds or malformed forecast, inverted window,
+    `unsupported_counterfactual`; 501 `not_implemented` for unwired nodes;
+    500 `internal_error` with a generic message.
+  - Reports serialize absent metrics, calibration, and uncertainty statements
+    as the literal string `"missing"`; non-finite metrics are rejected because
+    JSON would turn them into `null`.
+- why: MiroFish keeps tasks in memory, so a restart loses them and pollers
+  hang; persisting tasks and failing interrupted ones gives pollers a terminal
+  answer. Keeping mutable pointers out of the content-addressed store
+  preserves artifact immutability (invariant 11) while projects still evolve.
+  Using the project ID as the store namespace reuses N3's namespace isolation
+  as the ownership check (guide §11.1).
+- alternatives: re-enqueueing interrupted tasks on startup (rejected: jobs
+  may not be idempotent, and inputs can change between runs); storing project
+  state as artifacts (rejected: status and timestamps are mutable); per-world
+  scenario namespaces in the store (rejected: a project lookup would need the
+  scenario first); 400 for every invalid body (rejected: the guide reserves
+  422 for invalid models and unsupported requests).
+
+## D17 — Wire form for infinite metrics and the remaining API contract gaps
+
+- date: 2026-10-04
+- decision: A metric that is +∞ (an observed outcome assigned zero probability,
+  invariant 10) is sent as the literal string `"+inf"`. `MetricValue` becomes
+  `number | "missing" | "+inf"`. The UI shows it as an impossible outcome, never
+  as a number. Other non-finite values stay rejected by the serializer. The
+  frontend contract also gains: a nullable `registry_version`, an optional
+  bounded `particles` on forecast requests, the `PUT .../world` import route,
+  and 413/415 codes in the client.
+- why: JSON has no infinity and would silently turn it into `null`, which hides
+  exactly the failure invariant 10 must expose. These gaps were found while
+  building the API server skeleton (N11).
+- next: apply in the frontend contract with N14 and in the report serializer
+  with N7.4/N10.

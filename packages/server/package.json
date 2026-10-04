@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@c2p/core": "^0.1.0",
+    "@fastify/multipart": "^10.1.2",
     "fastify": "^5.12.5"
   }
 }
