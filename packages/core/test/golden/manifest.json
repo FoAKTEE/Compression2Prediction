@@ -1,0 +1,11 @@
+{
+  "fixtures": [
+    {
+      "description": "Guide §13 incident kernels (baseline, extra_crew) and 2-step forecasts from (1, 0, 0).",
+      "file": "kernels_incident_forecast.json",
+      "oracle": "reference/python",
+      "oracle_module": "c2p.kernels"
+    }
+  ],
+  "generator": "reference/python/golden/generate.py"
+}

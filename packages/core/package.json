@@ -1,0 +1,21 @@
+{
+  "name": "@c2p/core",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Finite-kernel numerical core for c2p. Node built-ins only; no runtime dependencies.",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": {
+      "@c2p/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -b"
+  }
+}

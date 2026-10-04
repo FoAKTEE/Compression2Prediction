@@ -1,0 +1,70 @@
+{
+  "initial": [
+    1.0,
+    0.0,
+    0.0
+  ],
+  "kernels": [
+    {
+      "forecast": [
+        0.36,
+        0.39,
+        0.25
+      ],
+      "name": "baseline",
+      "rows": [
+        [
+          0.6,
+          0.3,
+          0.1
+        ],
+        [
+          0.0,
+          0.7,
+          0.3
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ]
+    },
+    {
+      "forecast": [
+        0.09,
+        0.28,
+        0.63
+      ],
+      "name": "extra_crew",
+      "rows": [
+        [
+          0.3,
+          0.4,
+          0.3
+        ],
+        [
+          0.0,
+          0.4,
+          0.6
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ]
+    }
+  ],
+  "oracle": "reference/python",
+  "oracle_module": "c2p.kernels",
+  "space": {
+    "name": "IncidentStatus",
+    "values": [
+      "unacknowledged",
+      "acknowledged",
+      "resolved"
+    ]
+  },
+  "steps": 2
+}

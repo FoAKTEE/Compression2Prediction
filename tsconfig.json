@@ -1,0 +1,10 @@
+{
+  "files": [],
+  "references": [
+    { "path": "packages/core" },
+    { "path": "packages/server" },
+    { "path": "packages/core/test" },
+    { "path": "packages/server/test" },
+    { "path": "tsconfig.tools.json" }
+  ]
+}

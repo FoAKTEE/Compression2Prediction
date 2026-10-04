@@ -175,3 +175,57 @@ say so explicitly and never rewrite history.
 - decision: The Python N3 store worker was stopped before writing files; N3 is
   implemented directly in `@c2p/server`. The Python oracle covers N1 and N2 only.
 - why: the store is not numerical, so a Python oracle adds no parity value.
+
+## D13 — Node toolchain: TypeScript 6.0, vitest projects, source-condition imports
+
+- date: 2026-10-04
+- decision: Root dev dependencies: `typescript` ~6.0.3, `vue-tsc` ^3.3.12,
+  `vitest` ^5.0.3 with `happy-dom` ^20.14.5 and `@vue/test-utils` ^2.5.1,
+  `vite` ^8.3.2 with `@vitejs/plugin-vue` ^6.0.9, `tsx` ^4.23.15,
+  `concurrently` ^10.0.5, `@types/node` ^22.20.5. Runtime: `fastify` ^5.12.5
+  (`@c2p/server`), `vue` ^3.5.43 (`frontend`); `@c2p/core` has none.
+  `package-lock.json` pins exact versions. Build graph: root `tsconfig.json` is a
+  solution file referencing `packages/core` ← `packages/server` (composite, emit
+  to `dist/`), the noEmit test projects `packages/{core,server}/test`, and
+  `tsconfig.tools.json` (`vitest.config.ts`); `npm run typecheck` is `tsc -b`
+  plus `vue-tsc --noEmit -p frontend`. Vitest uses one root config with three
+  `test.projects` (core, server, frontend on happy-dom) and explicit include
+  globs only. `@c2p/core` is importable without a manual build:
+  - its `exports` puts a custom condition `"@c2p/source": "./src/index.ts"`
+    ahead of `types` (`dist/index.d.ts`) and `default` (`dist/index.js`);
+  - vitest aliases `@c2p/core` to `packages/core/src/index.ts`;
+  - the server dev script runs `tsx watch --conditions=@c2p/source`;
+  - `tsc -b` builds core's declarations before it checks the server.
+  Only `npm run start -w @c2p/server` (plain Node on `dist/`) needs
+  `npm run build` first. The server depends on `"@c2p/core": "^0.1.0"`, which
+  npm links from the workspace (npm has no `workspace:` protocol).
+- why: `typescript` 7.0.2 is the native compiler and ships no classic JS API
+  (its `exports` expose only `./lib/version.cjs` and `./unstable/*`), so
+  `vue-tsc` 3.3.12 fails with `ERR_PACKAGE_PATH_NOT_EXPORTED` for
+  `typescript/lib/tsc`. 6.0.3 is the newest release with that API: `vue-tsc`,
+  `tsc -b`, and the builds pass, and injected type errors fail in every project.
+  It is also the bridge to 7 (options deprecated in 6.0 are removed in 7).
+  TypeScript 6 defaults `types` to `[]`, so `tsconfig.base.json` sets
+  `types: ["node"]`. `jsdom` 30 requires Node >= 22.22.2 and the host runs
+  22.14.0, hence happy-dom. `@types/node` follows the 22.x line of `engines`
+  (>= 22.13, where `node:sqlite` needs no flag for N3). The condition keeps
+  published-style `dist/` entry points for production while dev and tests read
+  sources. `reporters: ["default"]` prints per-project file lines in every
+  environment.
+- alternatives: TypeScript 5.9.3 (works with the same configs; rejected only as
+  older than 6.0.3). TypeScript 7 for core/server with a second compiler for
+  `vue-tsc` (rejected: two compilers with different semantics). tsconfig
+  `paths` to core sources (rejected: pulls core files into the server's emit
+  and breaks `rootDir`). Requiring `npm run build` before tests (rejected by
+  N0b's acceptance). jsdom (rejected: Node engine range).
+
+## D14 — N7 dependencies after the TypeScript switch (supersedes D8's edges)
+
+- date: 2026-10-04
+- decision: N7.1–N7.3 (datasets, sparse rows, scoring/gate contract) live in
+  `@c2p/core` and depend on N1 and N2 only. Persistence goes through N3 (dashed
+  edge) and N7.4 forecasts through N5 (dashed edge). N6 still waits on N5 and
+  the N7.3 contract. Also: TypeScript is pinned at 6.0.3, the newest release
+  `vue-tsc` can load (see D13); 7.0.2 ships no classic JS API.
+- why: the core cannot depend on the server package where the store lives
+  (init.md §1.3), so the N3 edge from D8 becomes a persistence-only edge.
