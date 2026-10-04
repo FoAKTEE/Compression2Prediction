@@ -451,7 +451,7 @@ acceptance: six-entity document keeps all 6 entities with kinds and evidence spa
 
 ### N9 — Simulation adapter (observer)
 
-- status: `pending`
+- status: `done`
 - depends: N3, N4, N5
 - substages: no numbered memo substages; memo §4.4 consumer row: strict boundary
   validation → logging → replay (`adapters/observer.py`; memo tests `test_boundary_schemas`,
@@ -460,10 +460,21 @@ acceptance: six-entity document keeps all 6 entities with kinds and evidence spa
   - inactive / explicit-no-action / failed / missing remain distinct
   - replay reproduces the numeric state updates
   - one state authority per variable
-- commits:
-- verifier:
+- commits: the `feat(adapters)` observer adapter commit
+- verifier (run by the orchestrator):
 
 ```text
+$ npx vitest run packages/server/test/adapters.*.test.ts
+ ✓ |server| packages/server/test/adapters.authority.test.ts (3 tests) 117ms
+ ✓ |server| packages/server/test/adapters.observerLog.test.ts (6 tests) 174ms
+ ✓ |server| packages/server/test/adapters.mirofish.test.ts (7 tests) 242ms
+ ✓ |server| packages/server/test/adapters.replay.test.ts (4 tests) 246ms
+ ✓ |server| packages/server/test/adapters.transitions.test.ts (7 tests) 465ms
+ Test Files  5 passed (5)
+      Tests  27 passed (27)
+$ npx tsc -b packages/server packages/server/test -> exit 0
+acceptance: inactive / explicit-no-action / failed / missing stay distinct (also in the core dataset summary); missing MiroFish lines never become explicit_no_action or inactive; replay reproduces states with fetch stubbed to throw; one state authority per variable; idempotent RunDir appends
+follow-up: core transition.v1 needs an `unknown` activity status valid only with observation_status missing (placeholders currently counted as action/completed in tallies)
 ```
 
 ### N11 — API server

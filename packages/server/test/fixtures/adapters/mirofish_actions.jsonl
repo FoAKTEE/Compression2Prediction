@@ -1,0 +1,17 @@
+{"timestamp": "2026-10-01T09:00:00.000001", "event_type": "simulation_start", "platform": "twitter", "total_rounds": 144, "agents_count": 4}
+{"round": 0, "timestamp": "2026-10-01T09:00:00.100000", "event_type": "round_start", "simulated_hour": 0}
+{"round": 0, "timestamp": "2026-10-01T09:00:00.200000", "agent_id": 0, "agent_name": "Operator A", "action_type": "CREATE_POST", "action_args": {"content": "Pump 3 is down at the depot."}, "result": null, "success": true}
+{"round": 0, "timestamp": "2026-10-01T09:00:01.000000", "event_type": "round_end", "actions_count": 1}
+{"round": 1, "timestamp": "2026-10-01T09:00:02.000000", "event_type": "round_start", "simulated_hour": 0}
+{"round": 1, "timestamp": "2026-10-01T09:00:05.000000", "agent_id": 1, "agent_name": "Operator B", "action_type": "DO_NOTHING", "action_args": {}, "result": null, "success": true}
+{"round": 1, "timestamp": "2026-10-01T09:00:05.500000", "agent_id": 0, "agent_name": "Operator A", "action_type": "LIKE_POST", "action_args": {"post_id": 1}, "result": null, "success": true}
+{"round": 1, "timestamp": "2026-10-01T09:00:06.000000", "event_type": "round_end", "actions_count": 2}
+{"round": 2, "timestamp": "2026-10-01T09:00:07.000000", "event_type": "round_start", "simulated_hour": 0}
+{"round": 2, "timestamp": "2026-10-01T09:00:07.100000", "event_type": "round_end", "actions_count": 0}
+{"round": 3, "timestamp": "2026-10-01T09:00:08.000000", "event_type": "round_start", "simulated_hour": 1}
+{"round": 3, "timestamp": "2026-10-01T09:00:11.000000", "agent_id": 2, "agent_name": "Depot Org", "action_type": "CREATE_COMMENT", "action_args": {"post_id": 1, "content": "Crew on the way."}, "result": "rate limited", "success": false}
+{"round": 3, "timestamp": "2026-10-01T09:00:11.200000", "agent_id": 0, "agent_name": "Operator A", "action_type": "REPOST", "action_args": {"post_id": 1}, "result": null, "success": true}
+{"round": 3, "timestamp": "2026-10-01T09:00:11.300000", "agent_id": 0, "agent_name": "Operator A", "action_type": "LIKE_POST", "action_args": {"post_id": 2}, "result": null, "success": true}
+{"round": 3, "timestamp": "2026-10-01T09:00:11.400000", "agent_id": 3, "agent_name": "Bystander", "action_type": "FOLLOW", "action_args": {"follow_id": 0}, "result": null, "success": true}
+{"round": 3, "timestamp": "2026-10-01T09:00:12.000000", "event_type": "round_end", "actions_count": 4}
+{"timestamp": "2026-10-01T09:00:12.500000", "event_type": "simulation_end", "platform": "twitter", "total_rounds": 3, "total_actions": 7}

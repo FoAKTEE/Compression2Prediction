@@ -496,3 +496,94 @@ say so explicitly and never rewrite history.
   response extensions to the frontend contract (N14); add a
   replacement-kernel reference to mechanism/policy interventions; add an
   initial-belief store keyed by `initial_belief_ref`.
+
+## D20 — Observer-mode simulation adapter: observer_log.v1, MiroFish reader, state authority, replay
+
+- date: 2026-10-04
+- decision:
+  - Format: `observer_log.v1` JSONL, read and written by
+    `server/src/adapters/` (a library; no route yet). Every line has a
+    `type`, and unknown fields are rejected:
+    - `run_start {schema_version, run_id, scenario_id, platform,
+      step_minutes, bindings, state_schema_version}`;
+    - `round_start {round, simulated_time_minutes, activation,
+      activated_agent_ids}`;
+    - per agent at most one outcome: `action {action_type, action_args,
+      result, success}`, `no_action` (an explicit, valid decision), or
+      `failure {error}`, each with `round`, `agent_id`, `source_action_ids`;
+    - `round_end {round}`, `run_end`.
+    Rounds are contiguous on one clock (`simulated_time_minutes -
+    round * step_minutes` constant). With `activation: "known"`, every
+    activated agent has exactly one outcome and the others none. With
+    `activation: "unknown"`, `activated_agent_ids` is null. Bindings share
+    one platform and one `simulation_id`, and each agent and entity is bound
+    once, so there is one transition per entity per round (sequence 0). The
+    writer validates through the reader's schema.
+  - Transitions: one `transition_record.v1` per bound agent per round. Origin
+    is always `simulated`, `valid_time` and `availability_time` are null,
+    and the caller supplies `processing_time`. Mapping:
+    - action: `action`/`completed`, or `failed` when `success` is false;
+    - failure: `action`/`failed`;
+    - no_action: `explicit_no_action`/`completed`;
+    - not activated (known activation only): `inactive`/`not_attempted`;
+    - no outcome under unknown activation: `observation_status: missing`,
+      `state_after: null`. `transition.v1` has no "unknown" activity value,
+      so these records carry `action`/`completed` placeholders. Core
+      excludes them with reason `missing` before reading either status.
+      They are never `explicit_no_action` or `inactive`.
+    Observation is `complete` when both states are known, else `partial`.
+  - State: a declared `StateMap` with `version` (must equal the log's
+    `state_schema_version`), `variables`, `initial`, and a pure
+    `next(before, outcome, context)`. After an unobserved round, `before`
+    is null, and `next` returns null unless the outcome restores the state.
+    Built-in `activity_state.v1`: `activity` is busy after a completed
+    action, else available; `idle_minutes` adds `step_minutes` per round and
+    resets on a completed action.
+  - MiroFish: `readMiroFishActions` reads one `<platform>/actions.jsonl`
+    strictly (exact field sets; the legacy logger's `platform` is optional).
+    - MiroFish does not log activation, so every round is
+      `activation: "unknown"`. A bound agent without a line is missing; only
+      a recorded `DO_NOTHING` is a `no_action`.
+    - Several lines for one agent in one round become one outcome (the first
+      non-`DO_NOTHING` line), keep all source ids, and are reported. Lines
+      from unbound agents are reported, not attributed.
+    - Defects: `simulation_start.total_rounds` (hours x 2) and
+      `simulation_end.total_rounds` are reported and ignored. `round_end`
+      has no `simulated_hours`, so time is `round * step_minutes` (round 0 is
+      the initial-post phase at t = 0; round r >= 1 ends at r * step).
+      `round_start.simulated_hour` is checked against that schedule, which
+      catches a wrong `step_minutes`. `actions_count` and `total_actions`
+      are checked against the lines.
+    - A trailing round without `round_end` (no `simulation_end`) is dropped
+      and reported. Source ids are `mirofish:<platform>/actions.jsonl:<line>`.
+  - Authority: `StateAuthority({simulator, kernel})`. A variable in both
+    lists throws. `toTransitionRecords` and `appendTransitions` throw on any
+    kernel-owned or undeclared variable.
+  - Persistence: `transitions.jsonl` stores each envelope flattened (the
+    `transition.v1` fields plus the envelope fields other than
+    `schema_version` and `transition`), because `RunDir.appendRecords` keys
+    top-level fields by `TRANSITION_KEY`. `fromRunRow` restores the envelope
+    and decodes it with core. A record equal to a stored one apart from
+    `processing_time` keeps the stored time, so a rerun is skipped.
+    `observerManifest` adds mode, platform, step, rounds, the canonical log
+    hash, the state-map version, and the authority. `seed` is supplied by
+    the caller (0 when the simulator records none), and
+    `random_stream_layout` states that no c2p random numbers are drawn.
+  - Replay: `replay(log, stateMap)` recomputes the state trajectory from the
+    recorded outcomes alone. It takes no client and does no I/O.
+    `checkReplay` compares it with emitted or stored records.
+- why: guide §9.3 needs complete rounds in which inactivity, no-action,
+  failure, and missingness stay distinct, with activation recorded at
+  execution time. MiroFish records no activation, so a silent agent can only
+  be missing. Guide §10.6 requires one owner per state variable, and §10.7
+  requires a replay that consumes recorded realizations instead of calling
+  the LLM again.
+- alternatives: inferring `inactive` or `explicit_no_action` for silent
+  MiroFish agents (rejected: guide §9.3); omitting missing records and
+  relying on core gap detection (rejected: leading and trailing gaps would
+  be invisible); an `actions` list per outcome to keep multi-action rounds
+  lossless (deferred: extra lines stay referenced by source id); nested
+  envelopes with top-level key copies (rejected: the manifest's scenario
+  check reads the top-level `scenario_id`).
+- next: a core follow-up may add an `unknown` activity status valid only with
+  `missing`. An API route will consume this module.

@@ -1,0 +1,16 @@
+{"type":"run_start","schema_version":"observer_log.v1","run_id":"run_obs_1","scenario_id":"baseline","platform":"reddit","step_minutes":60,"bindings":[{"simulation_id":"sim_obs","platform":"reddit","agent_id":0,"entity_id":"ent_operator_a","representation":"synthetic_persona","profile_version":"profile.v1"},{"simulation_id":"sim_obs","platform":"reddit","agent_id":1,"entity_id":"ent_operator_b","representation":"synthetic_persona","profile_version":"profile.v1"},{"simulation_id":"sim_obs","platform":"reddit","agent_id":2,"entity_id":"ent_depot_org","representation":"synthetic_persona","profile_version":"profile.v1"}],"state_schema_version":"activity_state.v1"}
+{"type":"round_start","round":1,"simulated_time_minutes":60,"activation":"known","activated_agent_ids":[0,1,2]}
+{"type":"action","round":1,"agent_id":0,"action_type":"CREATE_POST","action_args":{"content":"Pump 3 is down."},"result":null,"success":true,"source_action_ids":["obs:reddit:1:0"]}
+{"type":"no_action","round":1,"agent_id":1,"source_action_ids":["obs:reddit:1:1"]}
+{"type":"failure","round":1,"agent_id":2,"error":"LLM request timed out","source_action_ids":[]}
+{"type":"round_end","round":1}
+{"type":"round_start","round":2,"simulated_time_minutes":120,"activation":"known","activated_agent_ids":[]}
+{"type":"round_end","round":2}
+{"type":"round_start","round":3,"simulated_time_minutes":180,"activation":"known","activated_agent_ids":[2,0]}
+{"type":"no_action","round":3,"agent_id":0,"source_action_ids":["obs:reddit:3:0"]}
+{"type":"action","round":3,"agent_id":2,"action_type":"LIKE_POST","action_args":{"post_id":1},"result":"post not found","success":false,"source_action_ids":["obs:reddit:3:2"]}
+{"type":"round_end","round":3}
+{"type":"round_start","round":4,"simulated_time_minutes":240,"activation":"known","activated_agent_ids":[1]}
+{"type":"action","round":4,"agent_id":1,"action_type":"CREATE_COMMENT","action_args":{"post_id":1,"content":"Crew dispatched."},"result":null,"success":true,"source_action_ids":["obs:reddit:4:1"]}
+{"type":"round_end","round":4}
+{"type":"run_end"}
