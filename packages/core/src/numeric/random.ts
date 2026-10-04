@@ -163,25 +163,34 @@ export function createStream(seed: Uint8Array | bigint): RandomStream {
 /**
  * Inverse-CDF draw: the first index whose cumulative mass exceeds u * total.
  * Weights must be finite and nonnegative with a positive sum; zero-weight
- * indices are never returned.
+ * indices are never returned. Weights are first scaled by a power of two
+ * near 1 / max (exact barring underflow, so draws of ordinary weights are
+ * unchanged), so finite weights never overflow their sum.
  */
 export function categorical(stream: RandomStream, probs: readonly number[]): number {
   if (!Array.isArray(probs) || probs.length === 0) throw new ValueError(`probabilities: expected a nonempty array, got ${repr(probs)}`);
-  let total = 0;
+  let max = 0;
   let last = -1;
   for (let j = 0; j < probs.length; j++) {
     const p = probs[j]!;
     if (typeof p !== "number" || !Number.isFinite(p) || p < 0) {
       throw new ValueError(`probabilities[${j}]: expected a finite nonnegative number, got ${repr(p)}`);
     }
-    total += p;
+    if (p > max) max = p;
     if (p > 0) last = j;
   }
-  if (!(total > 0)) throw new ValueError("probabilities: total mass is zero");
+  if (!(max > 0)) throw new ValueError("probabilities: total mass is zero");
+  // 2^shift * max lies in [1/2, 4); |shift| <= 1023 keeps the factor finite.
+  const shift = Math.min(1023, Math.max(-1023, -Math.floor(Math.log2(max))));
+  const scale = 2 ** shift;
+  const scaled = probs.map((p) => p * scale);
+  let total = 0;
+  for (const w of scaled) total += w;
+  if (!Number.isFinite(total) || !(total > 0)) throw new ValueError(`probabilities: scaled total ${total} is not a positive finite number`);
   const u = stream.nextFloat() * total;
   let cum = 0;
-  for (let j = 0; j < probs.length; j++) {
-    cum += probs[j]!;
+  for (let j = 0; j < scaled.length; j++) {
+    cum += scaled[j]!;
     if (u < cum) return j;
   }
   return last; // rounding left u at the total

@@ -54,9 +54,8 @@ describe("MiroFish actions.jsonl reader", () => {
     for (const rec of missing) {
       const t = rec.transition;
       expect(t.observation_status).toBe("missing");
-      expect(t.activity_status).not.toBe("explicit_no_action");
-      expect(t.activity_status).not.toBe("inactive");
-      expect(t.execution_status).not.toBe("not_attempted");
+      expect(t.activity_status).toBe("unknown");
+      expect(t.execution_status).toBe("unknown");
       expect(t.state_after).toBeNull();
     }
     expect(report.missing).toBe(missing.length);

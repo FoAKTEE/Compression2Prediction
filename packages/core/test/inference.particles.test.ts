@@ -175,20 +175,93 @@ describe("test_particle_oracle", () => {
     const hash = plan.model_hash;
     const result = rollout(plan, { target: A, evidence, initial, particles: 2000, replicates: 8, seed: 77, budget });
     const oracle = exactQuery(plan, { target: A, evidence, initial, budget }).distribution;
-    expect(result.mc_se_method).toBe("replicates");
+    expect(result.mc_se_method).toBe("replicate_ratio_delta");
     result.probabilities.forEach((p, j) => {
       expect(result.mc_se[j]!).toBeGreaterThan(0);
       expect(Math.abs(p - oracle[j]!)).toBeLessThanOrEqual(6 * result.mc_se[j]!);
     });
-    // Replicate spread is the reported error: mean and sample standard error of the replicate estimates.
-    const reps = result.replicate_probabilities.map((q) => q[1]!);
-    const mean = reps.reduce((s, x) => s + x, 0) / reps.length;
-    expect(Math.abs(mean - result.probabilities[1]!)).toBeLessThan(1e-12);
-    const se = Math.sqrt(reps.reduce((s, x) => s + (x - mean) ** 2, 0) / (reps.length * (reps.length - 1)));
-    expect(Math.abs(se - result.mc_se[1]!)).toBeLessThan(1e-12);
+    // The estimate is the pooled ratio of the replicate sums, not a mean of replicate ratios.
+    const A1 = result.replicate_numerators.reduce((s, a) => s + a[1]!, 0);
+    const B1 = result.replicate_masses.reduce((s, b) => s + b, 0);
+    expect(Math.abs(A1 / B1 - result.probabilities[1]!)).toBeLessThan(1e-12);
     expect(result.ess).toBeLessThan(16_000);
     expect(result.ess).toBeGreaterThan(1);
     expect(plan.model_hash).toBe(hash);
+  });
+
+  it("pools trajectory weights across replicates, with ESS and SE of that same ratio", () => {
+    const model = pairModel(NOISY_ROWS);
+    const plan = modelPlan(model);
+    const initial = priors(model);
+    const evidence: EvidencePair[] = [[B, "1"]];
+    const particles = 5;
+    const replicates = 3;
+    const result = rollout(plan, { target: A, evidence, initial, particles, replicates, seed: 4, budget });
+    // Independent recomputation from the same streams.
+    const draws = Array.from({ length: replicates }, (_, r) =>
+      Array.from({ length: particles }, (_, p) => {
+        const t = sampleTrajectory(plan, { keys: [A], evidence, initial, seed: 4, replicate: r, particle: p, particles });
+        return { w: Math.exp(t.log_weight), one: t.values.get(variableKeyString(A)) === "1" };
+      }),
+    );
+    const flat = draws.flat();
+    const mass = flat.reduce((s, d) => s + d.w, 0);
+    const p1 = flat.reduce((s, d) => s + (d.one ? d.w : 0), 0) / mass;
+    expect(Math.abs(result.probabilities[1]! - p1)).toBeLessThan(1e-12);
+    expect(Math.abs(result.ess - mass ** 2 / flat.reduce((s, d) => s + d.w ** 2, 0))).toBeLessThan(1e-9);
+    // Delta-method SE of the pooled ratio from replicate numerator/denominator pairs.
+    const a = draws.map((ds) => ds.reduce((s, d) => s + (d.one ? d.w : 0), 0));
+    const b = draws.map((ds) => ds.reduce((s, d) => s + d.w, 0));
+    const se = Math.sqrt(a.reduce((s, ar, r) => s + (ar - p1 * b[r]!) ** 2, 0) / (replicates * (replicates - 1))) / (mass / replicates);
+    expect(Math.abs(se - result.mc_se[1]!)).toBeLessThan(1e-12);
+  });
+
+  it("C5: one particle per replicate keeps the likelihood information", () => {
+    // Prior 1/2, likelihoods 1/100 and 99/100; exact posterior 99/100.
+    const model: ExactModel = {
+      roots: [{ name: "X", tick: 0, prior: bern(R(1, 2)) }],
+      writers: [{ name: "E", tick: 1, inputs: [["X", 0]], rows: [bern(R(1, 100)), bern(R(99, 100))] }],
+    };
+    const plan = modelPlan(model);
+    const initial = priors(model);
+    const evidence: EvidencePair[] = [[key("E", 1), "1"]];
+    const big = bigBudget({ max_particles: 100_000 });
+    const exact = exactQuery(plan, { target: key("X", 0), initial, evidence, budget: big }).distribution[1]!;
+    expect(Math.abs(exact - 0.99)).toBeLessThan(1e-15);
+    const weighted = rollout(plan, { target: key("X", 0), initial, evidence, budget: big, particles: 1, replicates: 4096, seed: 1907 });
+    const prior = rollout(plan, { target: key("X", 0), initial, budget: big, particles: 1, replicates: 4096, seed: 1907 });
+    // Before: 0.496826171875, the no-evidence value, 63 SE from the truth.
+    expect(prior.probabilities[1]).toBe(0.496826171875);
+    expect(weighted.probabilities[1]).not.toBe(prior.probabilities[1]);
+    expect(Math.abs(weighted.probabilities[1]! - exact)).toBeLessThanOrEqual(3 * weighted.mc_se[1]!);
+    expect(weighted.mc_se[1]!).toBeLessThan(1e-3);
+    expect(weighted.ess).toBeGreaterThan(1000);
+    expect(weighted.ess).toBeLessThan(4096);
+  });
+
+  it("the reported SE covers the true error at the nominal rate over 200 seeded runs", () => {
+    const model: ExactModel = {
+      roots: [{ name: "X", tick: 0, prior: bern(R(1, 2)) }],
+      writers: [{ name: "E", tick: 1, inputs: [["X", 0]], rows: [bern(R(1, 100)), bern(R(99, 100))] }],
+    };
+    const plan = modelPlan(model);
+    const initial = priors(model);
+    const evidence: EvidencePair[] = [[key("E", 1), "1"]];
+    const exact = exactQuery(plan, { target: key("X", 0), initial, evidence, budget }).distribution[1]!;
+    let within1 = 0;
+    let within2 = 0;
+    const runs = 200;
+    for (let seed = 0; seed < runs; seed++) {
+      const r = rollout(plan, { target: key("X", 0), initial, evidence, budget, particles: 4, replicates: 16, seed });
+      const z = Math.abs(r.probabilities[1]! - exact) / r.mc_se[1]!;
+      if (z <= 1) within1++;
+      if (z <= 2) within2++;
+    }
+    // Nominal 0.68 and 0.95 (t with 15 df: 0.67, 0.94); loose bounds both ways.
+    expect(within1 / runs).toBeGreaterThan(0.5);
+    expect(within1 / runs).toBeLessThan(0.85);
+    expect(within2 / runs).toBeGreaterThan(0.85);
+    expect(within2 / runs).toBeLessThan(0.995);
   });
 
   it("matches sampleTrajectory draw for draw", () => {

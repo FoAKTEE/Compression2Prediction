@@ -56,8 +56,8 @@ describe("observer log -> transition_record.v1", () => {
       records: 12,
       duplicates: 0,
       counted: 4,
-      activity: { action: 4, explicit_no_action: 2, inactive: 6 },
-      execution: { completed: 4, failed: 2, not_attempted: 6 },
+      activity: { action: 4, explicit_no_action: 2, inactive: 6, unknown: 0 },
+      execution: { completed: 4, failed: 2, not_attempted: 6, unknown: 0 },
       observation: { complete: 12, missing: 0, partial: 0 },
       gaps: [],
     });
@@ -75,6 +75,10 @@ describe("observer log -> transition_record.v1", () => {
     const mfRecords = toTransitionRecords(mf.log, activityStateMap, TRANSITION_OPTIONS);
     const { summary } = buildTransitionDataset(mfRecords, datasetOptions());
     expect(summary.observation.missing).toBe(7);
+    expect(summary.activity.unknown).toBe(7);
+    expect(summary.execution.unknown).toBe(7);
+    expect(summary.activity.action).toBe(4); // missing records no longer count as action/completed
+    expect(summary.execution.completed).toBe(4);
     expect(summary.activity.inactive).toBe(0);
     expect(summary.activity.explicit_no_action).toBe(1);
     expect(summary.execution.failed).toBe(1);

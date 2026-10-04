@@ -274,19 +274,30 @@ export function aggregatedContextSpace(selfSpace: Space | null, spec: Aggregatio
   return selfSpace === null ? spec.output : productAll([selfSpace, spec.output]);
 }
 
+export type SufficiencyStatus = "sufficient" | "insufficient" | "uncertified";
+
 export interface Sufficiency {
-  /** Largest TV between two raw rows that phi merges. */
+  /** Largest TV between two checked raw rows that phi merges. */
   readonly delta: Rational;
   /** Raw context indices attaining ``delta`` (first found), or null when delta = 0. */
   readonly witness: readonly [number, number] | null;
+  /** Raw contexts with an explicit row (a prior fallback counts only when given). */
+  readonly checked_contexts: number;
+  readonly total_contexts: number;
+  /** Every raw context was checked. */
+  readonly exhaustive: boolean;
+  /** delta > 0: insufficient; delta = 0 and exhaustive: sufficient; otherwise uncertified. */
+  readonly status: SufficiencyStatus;
+  /** status === "sufficient". */
   readonly sufficient: boolean;
 }
 
 /**
  * Within-bin residual: compare raw rows (exact, or empirical frequencies)
  * that phi maps to the same output. ``rows`` is indexed by raw context in
- * product order (first input slowest). phi is sufficient for these rows iff
- * delta = 0.
+ * product order (first input slowest); ``null`` marks an unchecked context.
+ * A positive delta refutes sufficiency; delta = 0 certifies it only when
+ * every context was checked, and is ``uncertified`` otherwise.
  */
 export function sufficiency(
   spec: AggregationSpec,
@@ -302,12 +313,14 @@ export function sufficiency(
   const width = rows.find((r) => r !== null)?.length;
   const bins = new Map<string, number[]>();
   const tuple = sizes.map(() => 0);
+  let checked = 0;
   for (let x = 0; x < total; x++) {
     const r = rows[x];
     if (r !== null) {
       if (!Array.isArray(r) || r.length !== width || r.some((p) => !(p instanceof Rational))) {
         throw new ValueError(`rows[${x}]: expected ${width} Rationals, got ${repr(r)}`);
       }
+      checked++;
       const z = aggregate(spec, tuple.map((v, i) => inputSpaces[i]!.values[v]!));
       const held = bins.get(z) ?? [];
       held.push(x);
@@ -332,5 +345,15 @@ export function sufficiency(
       }
     }
   }
-  return Object.freeze({ delta, witness, sufficient: delta.isZero() });
+  const exhaustive = checked === total;
+  const status: SufficiencyStatus = !delta.isZero() ? "insufficient" : exhaustive ? "sufficient" : "uncertified";
+  return Object.freeze({
+    delta,
+    witness,
+    checked_contexts: checked,
+    total_contexts: total,
+    exhaustive,
+    status,
+    sufficient: status === "sufficient",
+  });
 }

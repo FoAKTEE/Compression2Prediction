@@ -41,15 +41,13 @@ export interface Statuses {
 }
 
 /**
- * Status triple of one step. An unobserved step is ``missing``; transition.v1
- * has no "unknown" activity value, so it carries the schema-required
- * placeholders ``action`` / ``completed``, which ``missing`` overrides (core
- * excludes a missing record before reading either). It is never
- * ``explicit_no_action`` or ``inactive``.
+ * Status triple of one step. An unobserved step is ``missing`` with
+ * ``unknown`` activity and execution: never ``explicit_no_action`` or
+ * ``inactive``.
  */
 export function stepStatuses(step: ReplayStep): Statuses {
   const o = step.outcome;
-  if (o === null) return { activity_status: "action", execution_status: "completed", observation_status: "missing" };
+  if (o === null) return { activity_status: "unknown", execution_status: "unknown", observation_status: "missing" };
   const observation_status: ObservationStatus = step.state_before !== null && step.state_after !== null ? "complete" : "partial";
   switch (o.type) {
     case "inactive":

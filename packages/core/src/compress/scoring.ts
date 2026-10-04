@@ -6,11 +6,20 @@
  * Dirichlet-multinomial marginal of that sequence. It has no multinomial
  * coefficient: the code is for the ordered data, not for the count vector.
  * Outcomes off the declared support raise; nothing is smoothed.
+ *
+ * Numerics. Masses and alpha share one exact common denominator, so every
+ * sequential predictive is an exact BigInt ratio whose log2 is taken directly:
+ * no huge or vanishing concentration is rounded first. The closed form uses
+ * log rising factorials, log Gamma(a + n) - log Gamma(a) = sum_{i<n} log(a + i):
+ * a row's i = 0 terms combine into one exact ratio prod_y a_y / alpha, the next
+ * HEAD terms are exact logs, and longer tails use a Stirling difference written
+ * with log1p. Two large lgamma values are never subtracted.
  */
 import { Buffer } from "node:buffer";
 import { ValueError } from "../errors.js";
 import { fsum } from "../numeric/fsum.js";
-import { lgamma } from "../numeric/lgamma.js";
+import { log2Ratio, quotientToNumber } from "../numeric/log2rational.js";
+import type { Rational } from "../numeric/rational.js";
 import { canonicalJson } from "../store/records.js";
 import { repr } from "../store/repr.js";
 import { checkCountData, checkFamilyKey, familyKeyId } from "../learn/datasets.js";
@@ -20,11 +29,34 @@ import { SparseRows } from "../learn/rows.js";
 /** One prior table per family key. */
 export type FamilyPrior = readonly [FamilyKeyLike, SparseRows];
 
+/** Exact log rising-factorial terms before the Stirling tail takes over. */
+export const RISING_HEAD = 32;
+
 interface Row {
-  readonly alpha: number;
-  /** a_cy = alpha q_cy as doubles; zero off the support. */
-  readonly masses: readonly number[];
+  /** Common denominator D of alpha and every mass. */
+  readonly den: bigint;
+  /** alpha * D. */
+  readonly alpha: bigint;
+  /** a_cy * D; zero off the support. */
+  readonly masses: readonly bigint[];
   readonly support: readonly number[];
+}
+
+function gcd(a: bigint, b: bigint): bigint {
+  while (b !== 0n) [a, b] = [b, a % b];
+  return a;
+}
+
+function scaledRow(alpha: Rational, prior: readonly Rational[], support: readonly number[]): Row {
+  const masses = prior.map((q) => alpha.mul(q));
+  let den = alpha.denominator;
+  for (const m of masses) den = (den / gcd(den, m.denominator)) * m.denominator;
+  return {
+    den,
+    alpha: alpha.numerator * (den / alpha.denominator),
+    masses: Object.freeze(masses.map((m) => m.numerator * (den / m.denominator))),
+    support,
+  };
 }
 
 class Priors {
@@ -49,7 +81,7 @@ class Priors {
     }
   }
 
-  /** Family ID, context, and row masses for ``d``; range and support violations raise. */
+  /** Family ID, context, and exact row masses for ``d``; range and support violations raise. */
   resolve(d: CountDatum, where: string): { readonly family: string; readonly row: Row } {
     const family = familyKeyId(d.key);
     const table = this.tables.get(family);
@@ -68,12 +100,7 @@ class Priors {
     const rowKey = canonicalJson([family, d.context]);
     let row = this.rows.get(rowKey);
     if (row === undefined) {
-      const alpha = table.strength;
-      row = {
-        alpha: alpha.toNumber(),
-        masses: Object.freeze(table.prior(d.context).map((q) => alpha.mul(q).toNumber())),
-        support: table.support,
-      };
+      row = scaledRow(table.strength, table.prior(d.context), table.support);
       this.rows.set(rowKey, row);
     }
     return { family, row };
@@ -83,6 +110,7 @@ class Priors {
 /**
  * Per-datum code lengths in bits, in the given (chronological) order:
  * -log2((count[y] + alpha q[y]) / (total + alpha)), taken before the increment.
+ * Each predictive is formed exactly before its logarithm.
  */
 export function prequentialCodeLengths(data: readonly CountDatum[], priors: Iterable<FamilyPrior>): readonly number[] {
   const checked = checkCountData(data);
@@ -96,10 +124,11 @@ export function prequentialCodeLengths(data: readonly CountDatum[], priors: Iter
       s = { counts: row.masses.map(() => 0), total: 0 };
       state.set(key, s);
     }
-    const p = (s.counts[d.outcome]! + row.masses[d.outcome]!) / (s.total + row.alpha);
+    const num = BigInt(s.counts[d.outcome]!) * row.den + row.masses[d.outcome]!;
+    const den = BigInt(s.total) * row.den + row.alpha;
     s.counts[d.outcome]!++;
     s.total++;
-    return -Math.log2(p);
+    return -log2Ratio(num, den);
   });
   return Object.freeze(bits);
 }
@@ -109,10 +138,59 @@ export function prequentialBits(data: readonly CountDatum[], priors: Iterable<Fa
   return fsum(prequentialCodeLengths(data, priors));
 }
 
+/** Stirling remainder sum_k B_2k / (2k (2k - 1) z^(2k - 1)); z > 32 here. */
+const STIRLING: readonly number[] = Object.freeze([
+  1 / 12, -1 / 360, 1 / 1260, -1 / 1680, 1 / 1188, -691 / 360360, 1 / 156, -3617 / 122400,
+]);
+
+function stirlingRemainder(z: number): number {
+  const inv = 1 / z;
+  const inv2 = inv * inv;
+  let series = 0;
+  for (let k = STIRLING.length - 1; k >= 0; k--) series = series * inv2 + STIRLING[k]!;
+  return series * inv;
+}
+
+/** ln Gamma(x + k) - ln Gamma(x) for x > 32: k ln(x + k) + (x - 1/2) log1p(k / x) - k + S(x + k) - S(x). */
+function lnGammaIncrement(x: number, k: number): number {
+  return fsum([
+    k * Math.log(x + k),
+    (x - 0.5) * Math.log1p(k / x),
+    -k,
+    stirlingRemainder(x + k),
+    -stirlingRemainder(x),
+  ]);
+}
+
+/** sum_{i<n} log2((x + i den) / den) = (ln Gamma(a + n) - ln Gamma(a)) / ln 2 for a = x / den >= 1. */
+function log2Rising(x: bigint, den: bigint, n: number): number {
+  if (n <= 0) return 0;
+  const head = Math.min(n, RISING_HEAD);
+  const terms: number[] = [];
+  for (let i = 0; i < head; i++) terms.push(log2Ratio(x + BigInt(i) * den, den));
+  if (n > head) {
+    const shifted = x + BigInt(head) * den;
+    const k = n - head;
+    let start: number;
+    try {
+      start = quotientToNumber(shifted, den);
+    } catch (error) {
+      if (!(error instanceof RangeError)) throw error;
+      // a >= 2^1023 and k < 2^53: sum_i log2(1 + i / a) < 2^-917, below one ulp of k log2(a).
+      terms.push(k * log2Ratio(shifted, den));
+      return fsum(terms);
+    }
+    terms.push(lnGammaIncrement(start, k) / Math.LN2);
+  }
+  return fsum(terms);
+}
+
 /**
  * Closed-form ordered-sequence Dirichlet-multinomial code length in bits:
  * -(sum_c [lgamma(alpha) - lgamma(alpha + N_c) + sum_y (lgamma(a_cy + N_cy) - lgamma(a_cy))]) / ln 2,
- * over the declared support, with no multinomial coefficient.
+ * over the declared support, with no multinomial coefficient. Each gamma
+ * difference is a log rising factorial (module comment); none is a
+ * difference of rounded lgamma values.
  */
 export function dirichletMultinomialBits(data: readonly CountDatum[], priors: Iterable<FamilyPrior>): number {
   const checked = checkCountData(data);
@@ -131,13 +209,15 @@ export function dirichletMultinomialBits(data: readonly CountDatum[], priors: It
   });
   const terms: number[] = [];
   for (const { row, counts, total } of groups.values()) {
-    terms.push(lgamma(row.alpha), -lgamma(row.alpha + total));
-    for (const y of row.support) {
-      const n = counts[y]!;
-      if (n > 0) terms.push(lgamma(row.masses[y]! + n), -lgamma(row.masses[y]!));
-    }
+    const observed = row.support.filter((y) => counts[y]! > 0);
+    // i = 0 terms: prod_y a_y / alpha = prod_y A_y / (A_alpha D^(K - 1)), exactly.
+    let num = 1n;
+    for (const y of observed) num *= row.masses[y]!;
+    terms.push(log2Ratio(num, row.alpha * row.den ** BigInt(observed.length - 1)));
+    for (const y of observed) terms.push(log2Rising(row.masses[y]! + row.den, row.den, counts[y]! - 1));
+    terms.push(-log2Rising(row.alpha + row.den, row.den, total - 1));
   }
-  const bits = -fsum(terms) / Math.LN2;
+  const bits = -fsum(terms);
   return bits === 0 ? 0 : bits;
 }
 

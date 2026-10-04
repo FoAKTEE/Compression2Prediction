@@ -9,7 +9,8 @@
  * and moves by (1 - a_s) theta[s][0] + a_s theta[s][1]. Members in one bin
  * are i.i.d., so the next count vector is the sum of one multinomial per bin.
  * Identity-specific controls or deviations break the orbit lumpability; the
- * exhaustive ``symmetryCheck`` must then fail.
+ * exhaustive ``symmetryCheck`` (count law and permutation equivariance) must
+ * then fail.
  */
 import { ValueError } from "../errors.js";
 import { Rational } from "../numeric/rational.js";
@@ -58,14 +59,25 @@ export function countStates(n: number | bigint, k: number | bigint): bigint {
   return binomial(nn + kk - 1n, kk - 1n);
 }
 
-function pow(base: Rational, exponent: number): Rational {
-  let out = Rational.ONE;
-  let b = base;
-  for (let e = exponent; e > 0; e >>= 1) {
-    if (e & 1) out = out.mul(b);
-    b = b.mul(b);
+/** Largest bit length of an exact power the count model forms; beyond it the power raises. */
+export const MAX_POWER_BITS = 1 << 16;
+
+function bitLength(value: bigint): number {
+  return value === 0n ? 0 : (value < 0n ? -value : value).toString(2).length;
+}
+
+/** base^exponent exactly, BigInt exponent; 0 and 1 are fixed points at any exponent. */
+function pow(base: Rational, exponent: number, field = "exponent"): Rational {
+  const e = BigInt(exponent);
+  if (e === 0n) return Rational.ONE;
+  if (base.isZero() || base.equals(Rational.ONE)) return base;
+  const bits = BigInt(Math.max(bitLength(base.numerator), bitLength(base.denominator))) * e;
+  if (bits > BigInt(MAX_POWER_BITS)) {
+    throw new ValueError(
+      `${field} ${exponent}: (${base})^${exponent} needs about ${bits} bits; exact powers are limited to ${MAX_POWER_BITS} bits`,
+    );
   }
-  return out;
+  return Rational.of(base.numerator ** e, base.denominator ** e);
 }
 
 /** a = 1 - (1 - (c_active - 1{s active}) / (n_f - 1))^peers, exactly. */
@@ -80,7 +92,7 @@ export function peerActivationProbability(cActive: number, nF: number, sIsActive
   if (draws > 0 && n < 2) throw new ValueError(`a cohort of ${n} has no peers to draw ${draws} times`);
   if (draws === 0) return Rational.ZERO;
   const others = Rational.of(c - (sIsActive ? 1 : 0), n - 1);
-  return Rational.ONE.sub(pow(Rational.ONE.sub(others), draws));
+  return Rational.ONE.sub(pow(Rational.ONE.sub(others), draws, "peers"));
 }
 
 function checkRow(row: unknown, k: number, field: string): readonly Rational[] {
@@ -253,20 +265,42 @@ export interface SymmetryWitness {
   readonly count: Rational;
 }
 
+export interface EquivarianceWitness {
+  /** Index into ``controls``. */
+  readonly control: number;
+  /** The swapped members [i, i + 1]. */
+  readonly transposition: readonly [number, number];
+  readonly state: readonly number[];
+  readonly next_state: readonly number[];
+  /** P(state, next_state). */
+  readonly probability: Rational;
+  /** P(g state, g next_state). */
+  readonly permuted: Rational;
+}
+
 export interface SymmetryResult {
+  /** Every labeled row, aggregated to counts, equals ``countStepDistribution``. */
+  readonly count_law_agrees: boolean;
+  /** P(gx, gy) = P(x, y) for every adjacent transposition g and all labeled x, y. */
+  readonly permutation_equivariant: boolean;
+  /** count_law_agrees and permutation_equivariant. */
   readonly symmetric: boolean;
   readonly count_states: number;
   readonly labeled_states: number;
   readonly controls: number;
-  /** First disagreement, or null. */
+  /** First count-law disagreement, or null. */
   readonly witness: SymmetryWitness | null;
+  /** First equivariance failure, or null. */
+  readonly equivariance_witness: EquivarianceWitness | null;
 }
 
 /**
- * Exhaustive check for small n: for every supported control and every labeled
- * state, the labeled next-state law aggregated to counts must equal
- * ``countStepDistribution`` of the state's counts. This covers both
- * permutation invariance and agreement with the count generator.
+ * Exhaustive check for small n, per supported control:
+ * - count law: every labeled row aggregated to counts equals
+ *   ``countStepDistribution`` of the state's counts;
+ * - equivariance: P(gx, gy) = P(x, y) for every adjacent transposition g
+ *   (these generate all member permutations) and every labeled x, y.
+ * Equal count laws do not imply equivariance, so ``symmetric`` needs both.
  */
 export function symmetryCheck<C>(labeledKernelFn: LabeledKernel<C>, n: number, k: number, controls: readonly SymmetricControl<C>[]): SymmetryResult {
   if (typeof labeledKernelFn !== "function") throw new ValueError(`labeledKernelFn: expected a function, got ${repr(labeledKernelFn)}`);
@@ -279,60 +313,97 @@ export function symmetryCheck<C>(labeledKernelFn: LabeledKernel<C>, n: number, k
   const states = Array.from({ length: size }, (_, i) => labeledState(i, members, values));
   const keys = states.map((s) => canonicalJson(countsOf(s, values)));
   const countStateKeys = new Set(keys);
+  // swaps[g][x] = index of x with members g and g + 1 exchanged.
+  const swaps = Array.from({ length: members - 1 }, (_, g) =>
+    states.map((s) => {
+      const t = [...s];
+      [t[g], t[g + 1]] = [t[g + 1]!, t[g]!];
+      return labeledIndex(t, values);
+    }),
+  );
+  const rowAt = (state: readonly number[], control: C): readonly Rational[] => {
+    const row = labeledKernelFn(state, control);
+    if (!Array.isArray(row) || row.length !== size) {
+      throw new ValueError(`labeled kernel at ${repr(state)}: expected ${size} Rationals, got ${repr(row)}`);
+    }
+    let total = Rational.ZERO;
+    row.forEach((p, y) => {
+      if (!(p instanceof Rational) || p.cmp(Rational.ZERO) < 0) {
+        throw new ValueError(`labeled kernel at ${repr(state)}[${y}]: expected a nonnegative Rational, got ${repr(p)}`);
+      }
+      total = total.add(p);
+    });
+    if (!total.equals(Rational.ONE)) throw new ValueError(`labeled kernel at ${repr(state)}: row sums to ${total}, not 1`);
+    return row;
+  };
+
+  let witness: SymmetryWitness | null = null;
+  let equivariance: EquivarianceWitness | null = null;
   for (const [ci, ctl] of controls.entries()) {
+    if (witness !== null && equivariance !== null) break;
     if (!Array.isArray(ctl.theta) || ctl.theta.length !== values) {
       throw new ValueError(`controls[${ci}].theta: expected ${values} row pairs, got ${repr(ctl.theta)}`);
     }
     const expected = new Map<string, readonly CountProbability[]>();
     for (const [x, state] of states.entries()) {
-      const key = keys[x]!;
-      let law = expected.get(key);
-      if (law === undefined) {
-        law = countStepDistribution(countsOf(state, values), ctl.theta, ctl.active, ctl.peers);
-        expected.set(key, law);
-      }
-      const row = labeledKernelFn(state, ctl.control);
-      if (!Array.isArray(row) || row.length !== size) {
-        throw new ValueError(`labeled kernel at ${repr(state)}: expected ${size} Rationals, got ${repr(row)}`);
-      }
-      const got = new Map<string, Rational>();
-      let total = Rational.ZERO;
-      row.forEach((p, y) => {
-        if (!(p instanceof Rational) || p.cmp(Rational.ZERO) < 0) {
-          throw new ValueError(`labeled kernel at ${repr(state)}[${y}]: expected a nonnegative Rational, got ${repr(p)}`);
+      if (witness !== null && equivariance !== null) break;
+      const row = rowAt(state, ctl.control);
+      if (witness === null) {
+        const key = keys[x]!;
+        let law = expected.get(key);
+        if (law === undefined) {
+          law = countStepDistribution(countsOf(state, values), ctl.theta, ctl.active, ctl.peers);
+          expected.set(key, law);
         }
-        total = total.add(p);
-        if (p.isZero()) return;
-        got.set(keys[y]!, (got.get(keys[y]!) ?? Rational.ZERO).add(p));
-      });
-      if (!total.equals(Rational.ONE)) throw new ValueError(`labeled kernel at ${repr(state)}: row sums to ${total}, not 1`);
-      const want = new Map(law.map((e) => [canonicalJson(e.counts), e] as const));
-      for (const nextKey of new Set([...want.keys(), ...got.keys()])) {
-        const pc = want.get(nextKey)?.probability ?? Rational.ZERO;
-        const pl = got.get(nextKey) ?? Rational.ZERO;
-        if (!pc.equals(pl)) {
-          return Object.freeze({
-            symmetric: false,
-            count_states: countStateKeys.size,
-            labeled_states: size,
-            controls: controls.length,
-            witness: Object.freeze({
+        const got = new Map<string, Rational>();
+        row.forEach((p, y) => {
+          if (!p.isZero()) got.set(keys[y]!, (got.get(keys[y]!) ?? Rational.ZERO).add(p));
+        });
+        const want = new Map(law.map((e) => [canonicalJson(e.counts), e] as const));
+        for (const nextKey of new Set([...want.keys(), ...got.keys()])) {
+          const pc = want.get(nextKey)?.probability ?? Rational.ZERO;
+          const pl = got.get(nextKey) ?? Rational.ZERO;
+          if (!pc.equals(pl)) {
+            witness = Object.freeze({
               control: ci,
               state,
               next_counts: Object.freeze(JSON.parse(nextKey) as number[]),
               labeled: pl,
               count: pc,
-            }),
-          });
+            });
+            break;
+          }
+        }
+      }
+      if (equivariance === null) {
+        for (const [g, swap] of swaps.entries()) {
+          const gx = swap[x]!;
+          if (gx < x) continue; // g is an involution: the pair was checked from gx
+          const other = gx === x ? row : rowAt(states[gx]!, ctl.control);
+          const y = row.findIndex((p, j) => !other[swap[j]!]!.equals(p));
+          if (y >= 0) {
+            equivariance = Object.freeze({
+              control: ci,
+              transposition: Object.freeze([g, g + 1] as const),
+              state,
+              next_state: states[y]!,
+              probability: row[y]!,
+              permuted: other[swap[y]!]!,
+            });
+            break;
+          }
         }
       }
     }
   }
   return Object.freeze({
-    symmetric: true,
+    count_law_agrees: witness === null,
+    permutation_equivariant: equivariance === null,
+    symmetric: witness === null && equivariance === null,
     count_states: countStateKeys.size,
     labeled_states: size,
     controls: controls.length,
-    witness: null,
+    witness,
+    equivariance_witness: equivariance,
   });
 }

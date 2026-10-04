@@ -1,7 +1,7 @@
 /** N6.1: family pooling and frozen-family shrinkage (memo §2.3, §4.3 POOL/SHRINK, §4.4). */
 import { describe, expect, it } from "vitest";
 import { FamilyKey } from "../src/causal/family.js";
-import { freezeFamily, FrozenFamily, pool, recordIdsHash, shrink, transitionIdEntity } from "../src/compress/families.js";
+import { FittedRows, freezeFamily, FrozenFamily, pool, recordIdsHash, shrink, toFamilyKey, transitionIdEntity, transitionIdParts } from "../src/compress/families.js";
 import { buildTransitionDataset } from "../src/learn/datasets.js";
 import type { CountDatum } from "../src/learn/datasets.js";
 import { exactRow, fitSparseRows, row, SparseRows } from "../src/learn/rows.js";
@@ -25,7 +25,7 @@ function training(): CountDatum[] {
 
 function family(): FrozenFamily {
   const d = training();
-  return freezeFamily(pool(d, KEY, uniformPrior()), KEY, d.map((x) => x.record_id));
+  return freezeFamily(pool(d, KEY, uniformPrior()), KEY);
 }
 
 /** Local data for e1 in context 0: counts (1, 2, 1), repeated ``times`` times. */
@@ -141,21 +141,117 @@ function fieldsOf(t: SparseRows) {
 }
 
 describe("frozen families", () => {
-  it("hashes the table, key, and training IDs and rejects tampering", () => {
+  it("hash the table, key, and full lineage and reject tampering", () => {
     const f = family();
     const ids = training().map((d) => d.record_id);
-    expect(f.training_ids).toEqual([...ids].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)));
+    const sorted = [...ids].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+    expect(f.training_ids).toEqual(sorted);
+    expect(f.lineage).toEqual({
+      record_ids: sorted,
+      local_ids: sorted,
+      origin: "simulated",
+      max_rounds: [["train", "reddit", 6]],
+      availability_cutoff: null,
+      ancestors: [],
+    });
     expect(f.content_hash).toMatch(/^sha256:[0-9a-f]{64}$/);
-    expect(freezeFamily(f.table, KEY, [...ids].reverse()).content_hash).toBe(f.content_hash);
+    expect(f.table).toBeInstanceOf(FittedRows);
+    expect(f.table.content_hash).toMatch(/^sha256:[0-9a-f]{64}$/);
+    // Order-free: the same records in another order freeze identically.
+    expect(freezeFamily(pool([...training()].reverse(), KEY, uniformPrior())).content_hash).toBe(f.content_hash);
+    expect(freezeFamily(f.table).content_hash).toBe(f.content_hash);
     expect(recordIdsHash(ids)).toBe(recordIdsHash([...ids].reverse()));
-    const fields = { table: f.table, key: f.key, training_ids: f.training_ids, content_hash: f.content_hash };
+    const fields = { table: f.table, key: f.key, training_ids: f.training_ids, lineage: f.lineage, content_hash: f.content_hash };
     expect(new FrozenFamily(fields).content_hash).toBe(f.content_hash);
     raises(() => new FrozenFamily({ ...fields, content_hash: "sha256:" + "0".repeat(64) }), /does not match/);
     raises(() => new FrozenFamily({ ...fields, training_ids: [...f.training_ids].reverse() }), /code-point order/);
-    raises(() => freezeFamily(f.table, KEY, ids.slice(1)), /training_ids lists 11/);
-    raises(() => freezeFamily(f.table, KEY, [...ids, ids[0]!]), /duplicate record ID/);
-    raises(() => freezeFamily(f.table, KEY, ["r1"]), /not a complete transition record ID/);
-    expect(freezeFamily(f.table, { ...KEY, regime: "surge" }, ids).content_hash).not.toBe(f.content_hash);
+    raises(() => new FrozenFamily({ ...fields, training_ids: f.training_ids.slice(1) }), /training_ids lists 11 records but the table's lineage has 12/);
+    raises(() => new FrozenFamily({ ...fields, lineage: { ...f.lineage, max_rounds: [] } }), /lineage: does not match/);
+    raises(() => new FrozenFamily({ ...fields, key: toFamilyKey({ ...KEY, regime: "surge" }) }), /regime/);
+    // Only pool/shrink results freeze: a bare table plus IDs carries no lineage.
+    const bare = fitSparseRows(training(), uniformPrior());
+    raises(() => freezeFamily(bare as never), /expected FittedRows from pool or shrink/);
+    raises(() => new FrozenFamily({ ...fields, table: bare as never }), /expected FittedRows/);
+    raises(() => new (FittedRows as unknown as new (...a: unknown[]) => FittedRows)(Symbol("x"), fieldsOf(bare), f.key, f.lineage), /only from pool or shrink/);
+    // The key is the table's; another key raises instead of re-labelling.
+    raises(() => freezeFamily(f.table, { ...KEY, regime: "surge" }), /regime 'surge' is not 'normal'/);
+    expect(transitionIdParts(ids[0]!)).toEqual({ run_id: "train", platform: "reddit", round: 0, entity_id: "e2", sequence_number: 0 });
+  });
+
+  it("C8: a shrink, refreeze, reuse chain keeps the transitive lineage and rejects the original data", () => {
+    const f = family();
+    const kappa = R(4);
+    const transported = shrink(f, "e1", [], kappa);
+    expect(transported).toBeInstanceOf(FittedRows);
+    expect(transported.lineage.record_ids).toEqual(f.training_ids);
+    expect(transported.lineage.local_ids).toEqual([]);
+    expect(transported.lineage.ancestors).toEqual([f.content_hash]);
+    const refrozen = freezeFamily(transported, KEY);
+    // Before: the refrozen family listed no training IDs and reuse succeeded.
+    expect(refrozen.training_ids).toEqual(f.training_ids);
+    for (const d of training()) {
+      raises(() => shrink(refrozen, d.entity_id, [d], kappa), /training IDs; local data must be disjoint/);
+    }
+    // Lineage accumulates over levels and is hashed.
+    const level2 = shrink(refrozen, "e1", local(), kappa);
+    const ids = local().map((d) => d.record_id);
+    expect(level2.lineage.record_ids).toEqual([...f.training_ids, ...ids].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)));
+    expect(level2.lineage.ancestors).toEqual([f.content_hash, refrozen.content_hash]);
+    const level2Frozen = freezeFamily(level2);
+    raises(() => shrink(level2Frozen, "e1", [local()[0]!], kappa), /training IDs/);
+    raises(() => shrink(level2Frozen, "e2", [training()[0]!], kappa), /training IDs/);
+    // Same table, different lineage: different hashes.
+    expect(shrink(f, "e1", [], kappa).content_hash).toBe(transported.content_hash);
+    expect(shrink(refrozen, "e1", [], kappa).content_hash).not.toBe(transported.content_hash);
+  });
+
+  it("C8: local data must be later than the prior's training in the same run", () => {
+    // A prior trained at round 100 of one run; local data at round 1 of that run.
+    const future = data("sameRun", "e", [[0, 0]], 100);
+    const futureFamily = freezeFamily(pool(future, KEY, uniformPrior()));
+    expect(futureFamily.lineage.max_rounds).toEqual([["sameRun", "reddit", 100]]);
+    const kappa = R(4);
+    raises(() => shrink(futureFamily, "e", data("sameRun", "e", [[0, 2]], 1), kappa), /round 1 is not later than the prior's training \(round 100/);
+    raises(() => shrink(futureFamily, "f", data("sameRun", "f", [[0, 2]], 100), kappa), /round 100 is not later/);
+    expect(str(exactRow(shrink(futureFamily, "e", data("sameRun", "e", [[0, 2]], 101), kappa), 0))).toEqual(["2/5", "1/5", "2/5"]);
+    // Rounds of another run or platform are a separate clock.
+    expect(shrink(futureFamily, "e", data("otherRun", "e", [[0, 2]], 1), kappa).lineage.max_rounds).toEqual([
+      ["otherRun", "reddit", 1],
+      ["sameRun", "reddit", 100],
+    ]);
+  });
+
+  it("C8: local data must carry the prior's actual origin, whatever its declared partition", () => {
+    const observedKey = { ...KEY, data_origin_partition: "observed" };
+    const trained = data("run", "e", [[0, 0]], 0, { origin: "observed", key: observedKey });
+    const f = freezeFamily(pool(trained, observedKey, uniformPrior()), observedKey);
+    expect(f.lineage.origin).toBe("observed");
+    const simLocal = data("runSim", "e", [[0, 2]], 1, { origin: "simulated", key: observedKey });
+    raises(() => shrink(f, "e", simLocal, R(4)), /actual origin 'simulated' differs from the prior's training origin 'observed'/);
+    const obsLocal = data("runObs", "e", [[0, 2]], 1, { origin: "observed", key: observedKey });
+    expect(shrink(f, "e", obsLocal, R(4)).lineage.origin).toBe("observed");
+  });
+
+  it("local data must be available after the prior's availability cutoff", () => {
+    const observedKey = { ...KEY, data_origin_partition: "observed" };
+    const at = (time: string | null) => ({ origin: "observed" as const, key: observedKey, availability_time: time });
+    const trained = [
+      ...data("obs", "e2", [[0, 0]], 0, at("2026-03-01T00:00:00Z")),
+      ...data("obs", "e3", [[0, 1]], 0, at("2026-03-02T09:00:00+09:00")),
+    ];
+    const f = freezeFamily(pool(trained, observedKey, uniformPrior()));
+    // 2026-03-02T09:00+09:00 is 2026-03-02T00:00Z, the later of the two.
+    expect(f.lineage.availability_cutoff).toBe("2026-03-02T09:00:00+09:00");
+    const kappa = R(4);
+    const local = (time: string | null) => data("obs2", "e1", [[0, 2]], 0, at(time));
+    raises(() => shrink(f, "e1", local("2026-03-01T12:00:00Z"), kappa), /not after the prior's availability cutoff/);
+    raises(() => shrink(f, "e1", local("2026-03-02T00:00:00Z"), kappa), /not after the prior's availability cutoff/);
+    raises(() => shrink(f, "e1", local(null), kappa), /no availability_time/);
+    raises(() => shrink(f, "e1", data("obs2", "e1", [[0, 2]], 0, { origin: "observed", key: observedKey }), kappa), /no availability_time/);
+    const later = shrink(f, "e1", local("2026-03-02T00:00:01Z"), kappa);
+    expect(later.lineage.availability_cutoff).toBe("2026-03-02T00:00:01Z");
+    // Naive timestamps cannot set or meet a cutoff.
+    raises(() => pool(data("obs", "e2", [[0, 0]], 0, at("2026-03-01T00:00:00")), observedKey, uniformPrior()), /explicit offset/);
   });
 });
 

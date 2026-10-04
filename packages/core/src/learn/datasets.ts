@@ -6,7 +6,8 @@
  * envelope, ``transition_record.v1`` (memo §4.1: extensions never ride as extra
  * payload fields). Status, never the absence of a record, distinguishes
  * inactivity, explicit no-action, failure, and missingness; a gap in the log is
- * reported as a gap, never filled in.
+ * reported as a gap, never filled in. Only a missing observation may carry
+ * ``unknown`` activity and execution statuses.
  */
 import { ValueError } from "../errors.js";
 import { Space } from "../kernels.js";
@@ -29,12 +30,14 @@ import { isPythonIsoformat } from "../world/timestamp.js";
 export const TRANSITION_SCHEMA_VERSION = "transition.v1";
 export const TRANSITION_RECORD_SCHEMA_VERSION = "transition_record.v1";
 
-export type ActivityStatus = "inactive" | "explicit_no_action" | "action";
-export type ExecutionStatus = "completed" | "failed" | "not_attempted";
+/** ``unknown`` only for a missing observation: the log cannot say whether the entity acted. */
+export type ActivityStatus = "inactive" | "explicit_no_action" | "action" | "unknown";
+/** ``unknown`` only for a missing observation. */
+export type ExecutionStatus = "completed" | "failed" | "not_attempted" | "unknown";
 export type ObservationStatus = "complete" | "missing" | "partial";
 export type RecordKind = "transition";
-export const ACTIVITY_STATUSES: readonly ActivityStatus[] = Object.freeze(["action", "explicit_no_action", "inactive"]);
-export const EXECUTION_STATUSES: readonly ExecutionStatus[] = Object.freeze(["completed", "failed", "not_attempted"]);
+export const ACTIVITY_STATUSES: readonly ActivityStatus[] = Object.freeze(["action", "explicit_no_action", "inactive", "unknown"]);
+export const EXECUTION_STATUSES: readonly ExecutionStatus[] = Object.freeze(["completed", "failed", "not_attempted", "unknown"]);
 export const OBSERVATION_STATUSES: readonly ObservationStatus[] = Object.freeze(["complete", "missing", "partial"]);
 export const RECORD_KINDS: readonly RecordKind[] = Object.freeze(["transition"]);
 
@@ -170,6 +173,15 @@ export function decodeTransition(json: unknown): Transition {
     mechanism_version: asStr(o.mechanism_version, "mechanism_version"),
   };
   const where = `transition ${repr(t.entity_id)} round ${t.round}`;
+  if ((t.activity_status === "unknown" || t.execution_status === "unknown") && t.observation_status !== "missing") {
+    throw new ValueError(
+      `${where}: activity_status ${repr(t.activity_status)} / execution_status ${repr(t.execution_status)}: ` +
+        `'unknown' is only for a missing observation, got ${repr(t.observation_status)}`,
+    );
+  }
+  if (t.activity_status === "unknown" && t.execution_status !== "unknown") {
+    throw new ValueError(`${where}: an unknown activity has an unknown execution, got ${repr(t.execution_status)}`);
+  }
   // Activation is recorded at execution time: inactive <=> not attempted.
   if ((t.activity_status === "inactive") !== (t.execution_status === "not_attempted")) {
     throw new ValueError(
@@ -257,6 +269,38 @@ export interface CountDatum {
   readonly outcome: number;
   readonly origin: Origin;
   readonly episode_id: string;
+  /** Envelope availability time when known (training cutoffs need an explicit offset); null or absent otherwise. */
+  readonly availability_time?: string | null;
+}
+
+const AWARE_TIMESTAMP =
+  /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2})(?::(\d{2})(?::(\d{2})(?:\.(\d{3}|\d{6}))?)?)?(?:Z|([+-])(\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{6}))?)?)$/;
+
+function daysFromCivil(y: number, m: number, d: number): number {
+  const yy = m <= 2 ? y - 1 : y;
+  const era = Math.floor(yy / 400);
+  const yoe = yy - era * 400;
+  const doy = Math.floor((153 * (m + (m > 2 ? -3 : 9)) + 2) / 5) + d - 1;
+  return era * 146097 + yoe * 365 + Math.floor(yoe / 4) - Math.floor(yoe / 100) + doy - 719468;
+}
+
+const micros = (fraction: string | undefined): bigint => BigInt((fraction ?? "").padEnd(6, "0"));
+
+/** Microseconds since the epoch of an ISO 8601 timestamp; naive (offset-free) text raises. */
+export function availabilityInstant(value: unknown, field: string): bigint {
+  const text = asStr(value, field);
+  const m = AWARE_TIMESTAMP.exec(text);
+  const iso = text.endsWith("Z") ? text.slice(0, -1) + "+00:00" : text;
+  if (m === null || !isPythonIsoformat(iso)) {
+    throw new ValueError(`${field}: expected an ISO 8601 timestamp with an explicit offset, got ${repr(value)}`);
+  }
+  const n = (i: number) => Number(m[i] ?? "0");
+  const local =
+    BigInt(daysFromCivil(n(1), n(2), n(3))) * 86_400_000_000n +
+    BigInt(n(4) * 3600 + n(5) * 60 + n(6)) * 1_000_000n +
+    micros(m[7]);
+  const offset = BigInt(n(9) * 3600 + n(10) * 60 + n(11)) * 1_000_000n + micros(m[12]);
+  return m[8] === "-" ? local + offset : local - offset;
 }
 
 export function checkFamilyKey(value: unknown, field = "key"): FamilyKeyLike {
@@ -275,7 +319,7 @@ export function familyKeyId(key: FamilyKeyLike): string {
 function checkCountDatum(value: unknown, field: string): CountDatum {
   if (typeof value !== "object" || value === null) throw new ValueError(`${field}: expected a CountDatum, got ${repr(value)}`);
   const v = value as Record<string, unknown>;
-  return Object.freeze({
+  const out: CountDatum = {
     record_id: asStr(v.record_id, `${field}.record_id`),
     key: checkFamilyKey(v.key, `${field}.key`),
     entity_id: asStr(v.entity_id, `${field}.entity_id`),
@@ -283,7 +327,10 @@ function checkCountDatum(value: unknown, field: string): CountDatum {
     outcome: nonnegativeInt(v.outcome, `${field}.outcome`),
     origin: asLiteral(v.origin, `${field}.origin`, ORIGINS),
     episode_id: asStr(v.episode_id, `${field}.episode_id`),
-  });
+  };
+  if (v.availability_time === undefined) return Object.freeze(out);
+  const availability = v.availability_time === null ? null : timestamp(v.availability_time, `${field}.availability_time`);
+  return Object.freeze({ ...out, availability_time: availability });
 }
 
 /**
@@ -429,8 +476,8 @@ export function buildTransitionDataset(records: Iterable<unknown>, options: Tran
     distinct.push({ id, record });
   }
 
-  const activity: Record<ActivityStatus, number> = { action: 0, explicit_no_action: 0, inactive: 0 };
-  const execution: Record<ExecutionStatus, number> = { completed: 0, failed: 0, not_attempted: 0 };
+  const activity: Record<ActivityStatus, number> = { action: 0, explicit_no_action: 0, inactive: 0, unknown: 0 };
+  const execution: Record<ExecutionStatus, number> = { completed: 0, failed: 0, not_attempted: 0, unknown: 0 };
   const observation: Record<ObservationStatus, number> = { complete: 0, missing: 0, partial: 0 };
   const excluded: Exclusion[] = [];
   const data: CountDatum[] = [];
@@ -461,6 +508,7 @@ export function buildTransitionDataset(records: Iterable<unknown>, options: Tran
         outcome: stateIndex(t.state_after!, variable, space, "state_after", id),
         origin,
         episode_id: t.run_id,
+        availability_time: record.availability_time,
       }),
     );
   }

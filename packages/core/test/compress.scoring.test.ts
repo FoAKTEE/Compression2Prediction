@@ -172,6 +172,47 @@ describe("prequential scoring", () => {
   });
 });
 
+describe("C9: extreme concentrations", () => {
+  const fair = (strength: Rational) =>
+    new SparseRows({ source: BIT, target: BIT, support: [0, 1], default_prior: [R(1, 2), R(1, 2)], strength, prior_overrides: [], counts: [] });
+  const STRENGTHS = [R(2), Rational.of(10n ** 6n), Rational.of(10n ** 12n), Rational.of(10n ** 16n), Rational.parse("1e-400"), Rational.of(10n ** 400n)];
+
+  it("one fair binary observation costs exactly 1 bit at every positive concentration", () => {
+    // Before: closed form 1.000306 at 1e12 and 0 at 1e16; sequential NaN and closed form a gamma(0) error at 1e-400.
+    const one = [datum(0, KEY_A, 0, 1)];
+    for (const strength of STRENGTHS) {
+      expect(prequentialBits(one, [[KEY_A, fair(strength)]]), String(strength)).toBe(1);
+      expect(dirichletMultinomialBits(one, [[KEY_A, fair(strength)]]), String(strength)).toBe(1);
+    }
+  });
+
+  it("long rows agree in both forms at extreme concentrations and match analytic limits", () => {
+    const next = lcg(9);
+    const data = Array.from({ length: 300 }, (_, i) => datum(i, KEY_A, 0, next() < 0.3 ? 1 : 0));
+    for (const strength of [...STRENGTHS, Rational.parse("1e-12")]) {
+      const priors: FamilyPrior[] = [[KEY_A, fair(strength)]];
+      const sequential = prequentialBits(data, priors);
+      const closed = dirichletMultinomialBits(data, priors);
+      expect(Number.isFinite(sequential) && Number.isFinite(closed)).toBe(true);
+      expect(Math.abs(sequential - closed), String(strength)).toBeLessThanOrEqual(1e-11 * Math.max(1, sequential));
+    }
+    // alpha -> infinity: every predictive is 1/2, so 300 observations cost 300 bits.
+    expect(Math.abs(prequentialBits(data, [[KEY_A, fair(Rational.of(10n ** 400n))]]) - 300)).toBeLessThan(1e-12);
+    // alpha = 1e-400 on (0, 0, 0, 1): 1/2 * ~1 * ~1 * (alpha/2)/3, i.e. 1 + log2(6) + 400 log2(10) bits.
+    const tiny: FamilyPrior[] = [[KEY_A, fair(Rational.parse("1e-400"))]];
+    const seq = [0, 0, 0, 1].map((y, i) => datum(i, KEY_A, 0, y));
+    const expected = 1 + Math.log2(6) + 400 * Math.log2(10);
+    expect(Math.abs(prequentialBits(seq, tiny) - expected)).toBeLessThan(1e-9);
+    expect(Math.abs(dirichletMultinomialBits(seq, tiny) - expected)).toBeLessThan(1e-9);
+    const lengths = prequentialCodeLengths(seq, tiny);
+    expect(lengths[0]).toBe(1);
+    for (const i of [1, 2]) {
+      expect(lengths[i]!).toBeGreaterThanOrEqual(0);
+      expect(lengths[i]!).toBeLessThan(1e-300);
+    }
+  });
+});
+
 describe("structure code", () => {
   /** Elias-gamma code of n >= 1: floor(log2 n) zeros, then n in binary. */
   function eliasGamma(n: number): string {

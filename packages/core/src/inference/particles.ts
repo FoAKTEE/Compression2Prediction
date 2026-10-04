@@ -9,9 +9,19 @@
  * sha256(seed, [replicate, particle], key, purpose), so evaluation and
  * consumer order never change a realization. Evidence keys are clamped and
  * weight the trajectory by their row likelihood (importance trajectories, no
- * resampling). Replicates are independent; their spread gives the Monte Carlo
- * error of weighted estimates, and unconditioned estimates use the binomial
- * error.
+ * resampling).
+ *
+ * The estimate is the pooled self-normalized ratio
+ *   p_j = sum_n w_n 1{y_n = j} / sum_n w_n
+ * over every trajectory of every replicate, so relative evidence mass is never
+ * discarded by normalizing within a replicate. Its Monte Carlo error is the
+ * delta-method (linearized) standard error of that same ratio from the R
+ * independent replicate sums A_rj = sum_{n in r} w_n 1{y_n = j}, B_r = sum_{n in r} w_n:
+ *   se_j = sqrt(sum_r (A_rj - p_j B_r)^2 / (R (R - 1))) / mean_r B_r.
+ * ESS is 1 / sum_n w~_n^2 for the same normalized weights. The SE measures
+ * replicate noise of this estimator; small ESS flags weight degeneracy, whose
+ * finite-sample ratio bias the SE does not bound. Unconditioned estimates use
+ * the binomial error.
  */
 import { Budget, Plan } from "../causal/compiler.js";
 import type { PlanNode } from "../causal/compiler.js";
@@ -47,13 +57,19 @@ export interface RolloutOptions {
 }
 
 export interface ParticleResult {
-  /** Mean of the replicate estimates, in the target Space's value order. */
+  /** Pooled ratio sum_n w_n 1{y_n = j} / sum_n w_n over all trajectories, in the target Space's value order. */
   readonly probabilities: Vector;
-  /** 1 / Σ w² over all trajectories' normalized weights. */
+  /** 1 / Σ w² over all trajectories' normalized weights (the weights of ``probabilities``). */
   readonly ess: number;
   readonly mc_se: Vector;
-  readonly mc_se_method: "binomial" | "replicates";
-  readonly replicate_probabilities: readonly Vector[];
+  /** ``binomial`` without evidence; else the delta-method SE of the pooled ratio over replicate sums. */
+  readonly mc_se_method: "binomial" | "replicate_ratio_delta";
+  /** Per replicate sum_{n in r} w_n 1{y_n = j}, on the common scale of ``replicate_masses``. */
+  readonly replicate_numerators: readonly Vector[];
+  /** Per replicate sum_{n in r} w_n, weights scaled by the largest weight overall. */
+  readonly replicate_masses: readonly number[];
+  /** Per replicate self-normalized estimate (diagnostic only); null when the replicate has no mass. */
+  readonly replicate_probabilities: readonly (Vector | null)[];
   readonly space: Space;
   readonly seed: number;
   readonly particles: number;
@@ -275,14 +291,12 @@ function simulate(
   return logWeight;
 }
 
-/** Normalized weights from log weights; all vanishing raises. */
-function normalize(logWeights: Float64Array, where: string): Float64Array {
+/** Weights exp(lw - max lw), so the largest is 1; all vanishing raises. */
+function scaledWeights(logWeights: Float64Array, where: string): Float64Array {
   let max = -Infinity;
   for (const lw of logWeights) if (lw > max) max = lw;
   if (max === -Infinity) throw new ValueError(`${where}: every trajectory weight vanished; the evidence is impossible under the sampled trajectories`);
-  const raw = Float64Array.from(logWeights, (lw) => Math.exp(lw - max));
-  const total = fsum(raw);
-  return raw.map((w) => w / total);
+  return Float64Array.from(logWeights, (lw) => Math.exp(lw - max));
 }
 
 const ROLLOUT_REQUIRED = Object.freeze(["target", "initial", "particles", "seed", "budget"]);
@@ -329,31 +343,44 @@ export function rollout(plan: Plan, options: RolloutOptions): ParticleResult {
     }
   }
 
-  const replicateEstimates: Vector[] = [];
+  // One common scale, so replicate sums are comparable and pool exactly.
+  const w = scaledWeights(logWeights, "rollout");
+  const numerators: Vector[] = [];
+  const masses: number[] = [];
+  const replicateEstimates: (Vector | null)[] = [];
+  const pooled: number[][] = Array.from({ length: k }, () => []);
   for (let r = 0; r < replicates; r++) {
-    const w = normalize(logWeights.subarray(r * particles, (r + 1) * particles), `replicate ${r}`);
     const terms: number[][] = Array.from({ length: k }, () => []);
-    w.forEach((wi, i) => terms[outcomes[r * particles + i]!]!.push(wi));
-    replicateEstimates.push(Object.freeze(terms.map((list) => fsum(list))));
+    for (let n = r * particles; n < (r + 1) * particles; n++) {
+      terms[outcomes[n]!]!.push(w[n]!);
+      pooled[outcomes[n]!]!.push(w[n]!);
+    }
+    const a = Object.freeze(terms.map((list) => fsum(list)));
+    const b = fsum(w.subarray(r * particles, (r + 1) * particles));
+    numerators.push(a);
+    masses.push(b);
+    replicateEstimates.push(b > 0 ? Object.freeze(a.map((x) => x / b)) : null);
   }
-  const all = normalize(logWeights, "rollout");
-  const ess = 1 / fsum(Array.from(all, (w) => w * w));
-  const probabilities = Object.freeze(
-    Array.from({ length: k }, (_, j) => fsum(replicateEstimates.map((e) => e[j]!)) / replicates),
-  );
+  const mass = fsum(w);
+  const probabilities = Object.freeze(pooled.map((list) => fsum(list) / mass));
+  const ess = 1 / fsum(Array.from(w, (x) => (x / mass) ** 2));
   const weighted = (evidence as unknown[]).length > 0;
+  const meanMass = mass / replicates;
   const mc_se = Object.freeze(
     probabilities.map((p, j) => {
       if (!weighted) return Math.sqrt((p * (1 - p)) / total);
-      const dev = fsum(replicateEstimates.map((e) => (e[j]! - p) ** 2));
-      return Math.sqrt(dev / (replicates * (replicates - 1)));
+      // Linearized ratio residuals A_rj - p_j B_r.
+      const dev = fsum(numerators.map((a, r) => (a[j]! - p * masses[r]!) ** 2));
+      return Math.sqrt(dev / (replicates * (replicates - 1))) / meanMass;
     }),
   );
   return Object.freeze({
     probabilities,
     ess,
     mc_se,
-    mc_se_method: weighted ? "replicates" : "binomial",
+    mc_se_method: weighted ? "replicate_ratio_delta" : "binomial",
+    replicate_numerators: Object.freeze(numerators),
+    replicate_masses: Object.freeze(masses),
     replicate_probabilities: Object.freeze(replicateEstimates),
     space,
     seed,

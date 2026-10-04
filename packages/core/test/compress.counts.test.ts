@@ -7,6 +7,7 @@ import {
   countStepDistribution,
   labeledIndex,
   labeledState,
+  MAX_POWER_BITS,
   peerActivationProbability,
   symmetryCheck,
 } from "../src/compress/counts.js";
@@ -70,28 +71,71 @@ describe("restricted counting", () => {
   it("test_count_symmetry", () => {
     // Exhaustive: 27 labeled states in 10 count states, two supported controls.
     expect(symmetryCheck(labeled, 3, K, [observe, policy])).toEqual({
+      count_law_agrees: true,
+      permutation_equivariant: true,
       symmetric: true,
       count_states: 10,
       labeled_states: 27,
       controls: 2,
       witness: null,
+      equivariance_witness: null,
     });
-    // Identity-specific intervention and individual deviation fail.
+    // Identity-specific intervention and individual deviation fail both checks.
     for (const control of ["do_member0_offline", "member0_deviates"] as const) {
       const result = symmetryCheck(labeled, 3, K, [observe, { ...observe, control }]);
       expect(result.symmetric).toBe(false);
+      expect(result.count_law_agrees).toBe(false);
+      expect(result.permutation_equivariant).toBe(false);
+      expect(result.equivariance_witness!.control).toBe(1);
+      expect(result.equivariance_witness!.probability.equals(result.equivariance_witness!.permuted)).toBe(false);
       expect(result.witness!.control).toBe(1);
       expect(result.witness!.labeled.equals(result.witness!.count)).toBe(false);
       // No count model can pass: orbit-mates already disagree after aggregation.
       expect(aggregated([ACTIVE, IDLE, OFFLINE], control)).not.toEqual(aggregated([IDLE, ACTIVE, OFFLINE], control));
     }
     expect(aggregated([ACTIVE, IDLE, OFFLINE], "observe")).toEqual(aggregated([IDLE, ACTIVE, OFFLINE], "observe"));
-    // A count model with the wrong parameters fails too.
-    expect(symmetryCheck(labeled, 3, K, [{ ...observe, peers: 3 }]).symmetric).toBe(false);
+    // A count model with the wrong parameters fails too, though the kernel is equivariant.
+    const wrong = symmetryCheck(labeled, 3, K, [{ ...observe, peers: 3 }]);
+    expect([wrong.symmetric, wrong.count_law_agrees, wrong.permutation_equivariant]).toEqual([false, false, true]);
     expect(labeledIndex([2, 0, 1], K)).toBe(19);
     expect(labeledState(19, 3, K)).toEqual([2, 0, 1]);
     raises(() => symmetryCheck(labeled, 8, K, [observe]), /exceed 4096/);
     raises(() => symmetryCheck(labeled, 3, K, []), /at least one/);
+  });
+
+  it("C11: equal count laws without permutation equivariance are not symmetric", () => {
+    // Two members, P(00, 01, 10, 11) = (1/4, 1/2, 0, 1/4) from every state: fair count law, but swapping members changes it.
+    const fair = [R(1, 2), R(1, 2)];
+    const theta: Theta = [[fair, fair], [fair, fair]];
+    const asymmetric = () => [R(1, 4), R(1, 2), R(0), R(1, 4)];
+    const result = symmetryCheck(asymmetric, 2, 2, [{ control: "biased-identities", theta, active: 1, peers: 0 }]);
+    // Before: symmetric true.
+    expect(result.count_law_agrees).toBe(true);
+    expect(result.permutation_equivariant).toBe(false);
+    expect(result.symmetric).toBe(false);
+    expect(result.witness).toBeNull();
+    const w = result.equivariance_witness!;
+    expect(w.transposition).toEqual([0, 1]);
+    expect(w.state).toEqual([0, 0]);
+    expect(w.next_state).toEqual([0, 1]);
+    expect([w.probability.toString(), w.permuted.toString()]).toEqual(["1/2", "0"]);
+    // The swapped kernel is fine; a single member (no transpositions) is trivially equivariant.
+    const fairPair = () => [R(1, 4), R(1, 4), R(1, 4), R(1, 4)];
+    expect(symmetryCheck(fairPair, 2, 2, [{ control: "fair", theta, active: 1, peers: 0 }]).symmetric).toBe(true);
+    expect(symmetryCheck(() => [R(1, 2), R(1, 2)], 1, 2, [{ control: "one", theta, active: 1, peers: 0 }]).permutation_equivariant).toBe(true);
+  });
+
+  it("C10: peer activation uses exact BigInt powers at any admitted peer count", () => {
+    // One certainly active available peer: activation is exactly 1 for every peer count. Before: 0 at 2^32.
+    for (const peers of [1, 2 ** 31, 2 ** 32, 2 ** 32 + 1, Number.MAX_SAFE_INTEGER]) {
+      expect(peerActivationProbability(1, 2, false, peers)).toEqual(R(1));
+      expect(peerActivationProbability(0, 2, false, peers)).toEqual(R(0));
+    }
+    expect(peerActivationProbability(1, 3, false, 40)).toEqual(R(1).sub(Rational.of(1n, 2n ** 40n)));
+    // Absurd exact powers raise explicitly instead of wrapping or hanging.
+    raises(() => peerActivationProbability(1, 3, false, 2 ** 32), /peers 4294967296: .*exact powers are limited to 65536 bits/);
+    expect(MAX_POWER_BITS).toBe(65536);
+    expect(peerActivationProbability(1, 3, false, MAX_POWER_BITS / 2).denominator).toBe(2n ** BigInt(MAX_POWER_BITS / 2));
   });
 
   it("computes the exact count transition of memo §5.1", () => {

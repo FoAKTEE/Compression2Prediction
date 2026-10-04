@@ -144,11 +144,28 @@ describe("categorical", () => {
     counts.forEach((c, j) => expect(Math.abs(c / n - p[j]!)).toBeLessThan(0.01));
   });
 
+  it("B2: individually finite weights with an overflowing sum keep inverse-CDF order", () => {
+    const at = (u: number) => ({ nextFloat: () => u, nextUint32: () => 0, nextUint64: () => 0n, draws: 0 });
+    // Before: [1e308, 1e308] at u = 0.25 fell through to index 1.
+    expect(categorical(at(0.25), [1e308, 1e308])).toBe(0);
+    expect(categorical(at(0.75), [1e308, 1e308])).toBe(1);
+    expect(categorical(at(0.5), [Number.MAX_VALUE, Number.MAX_VALUE, Number.MAX_VALUE])).toBe(1);
+    expect(categorical(at(0.1), [0, 1e308, 0, 1e308])).toBe(1);
+    expect(categorical(at(0.9), [0, 1e308, 0, 1e308])).toBe(3);
+    // Tiny weights scale up the same way.
+    expect(categorical(at(0.25), [5e-324, 5e-324])).toBe(0);
+    expect(categorical(at(0.75), [5e-324, 5e-324])).toBe(1);
+    expect(categorical(at(0.6), [1e-310, 3e-310])).toBe(1);
+    // Power-of-two scaling is exact: ordinary weights draw exactly as before.
+    expect(categorical(at(0.2360730865747973), [0, 0.2360730865747973, 0, 0.7639269134252027])).toBe(3);
+  });
+
   it("rejects invalid weights", () => {
     const s = createStream(1n);
     raises(() => categorical(s, []), /nonempty/);
     raises(() => categorical(s, [0, 0]), /total mass is zero/);
     raises(() => categorical(s, [0.5, -0.1]), /nonnegative/);
     raises(() => categorical(s, [NaN, 1]), /finite/);
+    raises(() => categorical(s, [Infinity, 1]), /finite/);
   });
 });

@@ -112,6 +112,23 @@ describe("transition.v1 decoding", () => {
     expect(failed.execution_status).toBe("failed");
   });
 
+  it("admits unknown activity and execution only for a missing observation", () => {
+    const missing = { ...guideTransition(), observation_status: "missing", state_after: null };
+    const unknown = decodeTransition({ ...missing, activity_status: "unknown", execution_status: "unknown" });
+    expect([unknown.activity_status, unknown.execution_status, unknown.observation_status]).toEqual(["unknown", "unknown", "missing"]);
+    // An attempted action whose result was not observed.
+    expect(decodeTransition({ ...missing, activity_status: "action", execution_status: "unknown" }).execution_status).toBe("unknown");
+    for (const observation of ["complete", "partial"]) {
+      const seen = { ...guideTransition(), observation_status: observation };
+      raises(() => decodeTransition({ ...seen, activity_status: "unknown", execution_status: "unknown" }), /'unknown' is only for a missing observation/);
+      raises(() => decodeTransition({ ...seen, activity_status: "action", execution_status: "unknown" }), /'unknown' is only for a missing observation/);
+    }
+    raises(() => decodeTransition({ ...missing, activity_status: "unknown", execution_status: "completed" }), /unknown activity has an unknown execution/);
+    raises(() => decodeTransition({ ...missing, activity_status: "unknown", execution_status: "not_attempted" }), /unknown activity has an unknown execution/);
+    raises(() => decodeTransition({ ...missing, activity_status: "inactive", execution_status: "unknown" }), /contradicts/);
+    raises(() => decodeTransition({ ...missing, activity_status: "explicit_no_action", execution_status: "unknown" }), /must be completed/);
+  });
+
   it("keeps the envelope's four clocks separate and the payload free of extensions", () => {
     const r = decodeTransitionRecord(
       record(
@@ -176,8 +193,8 @@ describe("transition datasets", () => {
     expect(summary.records).toBe(6);
     expect(summary.duplicates).toBe(1);
     expect(summary.counted).toBe(2);
-    expect(summary.activity).toEqual({ action: 4, explicit_no_action: 1, inactive: 1 });
-    expect(summary.execution).toEqual({ completed: 4, failed: 1, not_attempted: 1 });
+    expect(summary.activity).toEqual({ action: 4, explicit_no_action: 1, inactive: 1, unknown: 0 });
+    expect(summary.execution).toEqual({ completed: 4, failed: 1, not_attempted: 1, unknown: 0 });
     expect(summary.observation).toEqual({ complete: 4, missing: 1, partial: 1 });
     expect(summary.excluded).toEqual([
       { record_id: id(3), reason: "inactive" },
@@ -192,6 +209,26 @@ describe("transition datasets", () => {
     // A distinct sequence number is a distinct record, not a duplicate.
     const second = record({ round: 2 }, { sequence_number: 1 });
     expect(buildTransitionDataset([...rows, second], OPTIONS).summary.records).toBe(7);
+  });
+
+  it("counts unknown statuses separately and excludes them as missing", () => {
+    const unknown = record({ round: 7, activity_status: "unknown", execution_status: "unknown", observation_status: "missing", state_after: null });
+    const { data, summary } = buildTransitionDataset([...rows, unknown], OPTIONS);
+    expect(data).toHaveLength(2);
+    expect(summary.activity).toEqual({ action: 4, explicit_no_action: 1, inactive: 1, unknown: 1 });
+    expect(summary.execution).toEqual({ completed: 4, failed: 1, not_attempted: 1, unknown: 1 });
+    expect(summary.observation).toEqual({ complete: 4, missing: 2, partial: 1 });
+    expect(summary.excluded.at(-1)).toEqual({ record_id: id(7), reason: "missing" });
+  });
+
+  it("carries the envelope availability time on counted data", () => {
+    const observed = record(
+      { round: 7, origin: "observed" },
+      { valid_time: "2026-01-01T00:00:00Z", availability_time: "2026-01-01T01:00:00+00:00" },
+    );
+    expect(buildTransitionDataset([observed], { ...OPTIONS, origin: "observed" }).data[0]!.availability_time).toBe("2026-01-01T01:00:00+00:00");
+    expect(buildTransitionDataset([rows[0]], OPTIONS).data[0]!.availability_time).toBeNull();
+    raises(() => checkCountData([{ ...buildTransitionDataset([rows[0]], OPTIONS).data[0]!, availability_time: "soon" }]), /availability_time/);
   });
 
   it("never turns a missing log entry into explicit no-action", () => {

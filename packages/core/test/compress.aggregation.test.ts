@@ -105,7 +105,41 @@ describe("AGGREGATE", () => {
     expect(residual.delta).toEqual(R(7, 10));
     expect(residual.witness).toEqual([2, 3]);
     const or = [[R(1), R(0)], [R(0), R(1)], [R(0), R(1)], [R(0), R(1)]];
-    expect(sufficiency(phi, [BIT, BIT], or)).toEqual({ delta: R(0), witness: null, sufficient: true });
+    expect(sufficiency(phi, [BIT, BIT], or)).toEqual({
+      delta: R(0),
+      witness: null,
+      checked_contexts: 4,
+      total_contexts: 4,
+      exhaustive: true,
+      status: "sufficient",
+      sufficient: true,
+    });
+    expect([check.status, check.exhaustive, check.checked_contexts]).toEqual(["insufficient", true, 4]);
+  });
+
+  it("B4: missing rows never certify sufficiency", () => {
+    const phi = anyActive(["a", "b"], "1");
+    // Before: both returned sufficient: true.
+    const none = sufficiency(phi, [BIT, BIT], [null, null, null, null]);
+    expect(none).toEqual({
+      delta: R(0),
+      witness: null,
+      checked_contexts: 0,
+      total_contexts: 4,
+      exhaustive: false,
+      status: "uncertified",
+      sufficient: false,
+    });
+    // XOR without its contradictory 11 row: no witness among checked rows, but not exhaustive.
+    const partial = sufficiency(phi, [BIT, BIT], [[R(1), R(0)], [R(0), R(1)], [R(0), R(1)], null]);
+    expect([partial.delta, partial.status, partial.sufficient, partial.checked_contexts, partial.exhaustive]).toEqual([R(0), "uncertified", false, 3, false]);
+    // A witness among checked rows refutes sufficiency even when rows are missing.
+    const refuted = sufficiency(phi, [BIT, BIT], [null, [R(0), R(1)], null, [R(1), R(0)]]);
+    expect([refuted.status, refuted.sufficient, refuted.witness]).toEqual(["insufficient", false, [1, 3]]);
+    // An explicit prior-fallback row counts as checked.
+    const fallback = [R(0), R(1)];
+    const explicit = sufficiency(phi, [BIT, BIT], [[R(1), R(0)], [R(0), R(1)], fallback, fallback]);
+    expect([explicit.status, explicit.exhaustive]).toEqual(["sufficient", true]);
   });
 
   it("validates specs and hashes them", () => {
