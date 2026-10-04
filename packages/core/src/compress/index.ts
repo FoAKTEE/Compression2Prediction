@@ -12,3 +12,6 @@ export * from "./families.js";
 export * from "./aggregation.js";
 export * from "./abstraction.js";
 export * from "./counts.js";
+export * from "./slicing.js";
+export * from "./ranking.js";
+export * from "./influence.js";

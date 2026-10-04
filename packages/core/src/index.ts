@@ -55,3 +55,4 @@ export * from "./evaluate/index.js";
 export * from "./compress/index.js";
 export { lgamma } from "./numeric/lgamma.js";
 export * from "./inference/index.js";
+export { categorical, createStream, streamSeed } from "./numeric/random.js";

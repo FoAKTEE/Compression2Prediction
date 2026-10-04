@@ -322,7 +322,7 @@ identification fixture: A and B agree observationally; do(X=1): P_A(Y=1)=1, P_B(
 
 ### N6 — Compression & scaling
 
-- status: `in-progress`
+- status: `done`
 - depends: N5, N7 scoring contract (N7.3), the memo (ADOPT-NOW set, §4.3–§4.4)
 - substages:
   - N6.1 pooling/shrinkage (`compress/families.py`; memo tests `test_pooling`, `test_shrinkage`)
@@ -363,6 +363,21 @@ $ npx vitest run (N6.1-N6.3 suites)
 $ npx tsc -b packages/core packages/core/test -> exit 0 (compress exports wired)
 test_scaling_arithmetic reproduces memo 5.1: 48,600,000 / 486,000 / 2,916 / 72 / 72; budgets 69 and 1110/880/624/439/439; count states 14,196 / 14,028; joint 7,992,000,035,023,637,251,067,904
 pending: N6.4 slicing, N6.5 particles, N6.rank (coder B)
+```
+- N6.4/N6.5/N6.rank verifier (run by the orchestrator; commit: the `feat(compress)` slicing/particles/ranking commit):
+
+```text
+$ npx vitest run --project core   (N6.4/N6.5/N6.rank suites)
+ ✓ |core| packages/core/test/numeric.random.test.ts (11 tests) 364ms
+ ✓ |core| packages/core/test/compress.ranking.test.ts (9 tests) 158ms
+ ✓ |core| packages/core/test/compress.slicing.test.ts (7 tests) 191ms
+ ✓ |core| packages/core/test/compress.influence.test.ts (9 tests) 456ms
+ ✓ |core| packages/core/test/inference.particles.test.ts (8 tests) 4502ms
+ Test Files  38 passed (38)
+      Tests  955 passed (955)
+$ npx tsc -b packages/core packages/core/test -> exit 0 (compress, inference, random exports wired); no Math.random in packages/core/src
+memo 5.2: reverse PPR T 0.428877770, H 0.206576126, S/U/V 0.121515368; bounds H 0, S 4/5; eps 1/20: H certificate 0 accepted, S 4/5 refused; two-path w_R = 1/2 = exact root-flip TV
+pruning certificates checked exhaustively: 81 clamp sets/assignments (hub), 27 (diamond)
 ```
 
 ### N7 — Learning & evaluation

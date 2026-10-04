@@ -15,3 +15,4 @@ export type {
 export { DO_PREFIX, isHardInterventionNode, isInterventionNode } from "./plan.js";
 export { runQuery, UNSUPPORTED_COUNTERFACTUAL } from "./queries.js";
 export type { QueryRequest, QueryResult } from "./queries.js";
+export * from "./particles.js";
