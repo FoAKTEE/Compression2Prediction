@@ -267,7 +267,7 @@ mutation checks by the worker: removing re-hash-on-read, immutable names, confli
 
 ### N4 — Hypergraph + compiler
 
-- status: `pending`
+- status: `done`
 - depends: N1, N2
 - substages: N4.1 specs/keys → N4.2 bindings → N4.3 compiler (`causal/specs.py`,
   `causal/templates.py`, `causal/compiler.py`; memo tests `test_ports_and_writers`,
@@ -278,10 +278,20 @@ mutation checks by the worker: removing re-hash-on-read, immutable names, confli
   - future reads rejected
   - reordering entities changes neither family assignment nor domain indices
   - no knowledge/event edge is ever promoted to a mechanism
-- commits:
-- verifier:
+- commits: the `feat(causal)` hypergraph compiler commit
+- verifier (run by the orchestrator):
 
 ```text
+$ npx vitest run --project core
+ ✓ |core| packages/core/test/causal.specs.test.ts (7 tests) 82ms
+ ✓ |core| packages/core/test/causal.registry.test.ts (7 tests) 175ms
+ ✓ |core| packages/core/test/causal.compiler.test.ts (8 tests) 296ms
+ ✓ |core| packages/core/test/causal.templates.test.ts (8 tests) 306ms
+ Test Files  22 passed (22)
+      Tests  852 passed (852)
+$ npx tsc -b packages/core packages/core/test -> exit 0 (top-level exports wired: causal, learn, evaluate, compress, lgamma; no export collisions)
+guide 13 incident plan: 2 nodes in tick order; kernels forecast (0.36, 0.39, 0.25) / (0.09, 0.28, 0.63)
+test_budget_before_product: over-budget compile makes 0 calls to product/productAll
 ```
 
 ### N5 — Inference & interventions

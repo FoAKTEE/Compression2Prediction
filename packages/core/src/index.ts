@@ -50,3 +50,7 @@ export {
 export type { EnvelopeFields, MetaFields, Origin, RecordClass } from "./store/records.js";
 export * from "./world/index.js";
 export * from "./causal/index.js";
+export * from "./learn/index.js";
+export * from "./evaluate/index.js";
+export * from "./compress/index.js";
+export { lgamma } from "./numeric/lgamma.js";
