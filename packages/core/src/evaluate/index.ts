@@ -22,3 +22,7 @@ export type {
   PredictionScore,
   ScoredRun,
 } from "./gate.js";
+export * from "./metrics.js";
+export * from "./baselines.js";
+export * from "./backtest.js";
+export * from "./uncertainty.js";

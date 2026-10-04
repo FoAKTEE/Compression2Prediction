@@ -367,7 +367,7 @@ pending: N6.4 slicing, N6.5 particles, N6.rank (coder B)
 
 ### N7 — Learning & evaluation
 
-- status: `in-progress`
+- status: `done`
 - depends: N1, N2 (N5 for forecasts, i.e. N7.4; persistence via N3)
 - substages: N7.1 datasets → N7.2 sparse row fitter → N7.3 scoring/gate contract
   (`learn/datasets.py`, `learn/rows.py`, `compress/scoring.py`, `evaluate/gate.py`;
@@ -394,6 +394,22 @@ $ npx vitest run --project core   (N7.1-N7.3 files)
       Tests  852 passed (852)
 $ npx tsc -b packages/core packages/core/test -> exit 0
 pending: N7.4 rolling-origin backtest (needs N5)
+```
+- N7.4 verifier (run by the orchestrator; commit: the `feat(evaluate)` backtest commit):
+
+```text
+$ npx vitest run --project core   (evaluate suites)
+ ✓ |core| packages/core/test/evaluate.metrics.test.ts (5 tests) 17ms
+ ✓ |core| packages/core/test/evaluate.gate.test.ts (10 tests) 92ms
+ ✓ |core| packages/core/test/evaluate.uncertainty.test.ts (5 tests) 199ms
+ ✓ |core| packages/core/test/evaluate.backtest.test.ts (7 tests) 226ms
+ ✓ |core| packages/core/test/evaluate.baselines.test.ts (6 tests) 2702ms
+   ✓ baselines (6)
+     ✓ plain Markov held-out NLL approaches the true entropy rate as data grows 2659ms
+ Test Files  5 passed (5)
+      Tests  33 passed (33)
+$ npx tsc -p packages/core/tsconfig.json --noEmit -> exit 0 (evaluate exports wired; test-project errors only in in-progress N6-B particle tests)
+plainMarkov excess bits over the true kernel: ~0.036 (20 transitions) -> ~0.008 (200) -> <0.001 (20,000); pure persistence mean NLL = +inf, visible as "+inf" on the wire
 ```
 
 ### N8 — Extraction pipeline
