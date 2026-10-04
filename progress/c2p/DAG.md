@@ -77,16 +77,24 @@ $ git status --short
 
 ### N1 — Finite kernel core
 
-- status: `pending`
+- status: `done`
 - depends: N0
 - substages: single stage — port the guide §12.1/§12.2 reference API to `kernels.py`
   (memo tests `test_reference_17`, `test_tensor_order`)
 - acceptance:
   - all 17 reference tests pass, including the guide §13 numbers (0.36, 0.39, 0.25) / (0.09, 0.28, 0.63)
-- commits:
-- verifier:
+- commits: the `feat(kernels)` finite kernel commit
+- verifier (run by the orchestrator):
 
 ```text
+$ python3 -m pytest tests/test_smoke.py tests/test_kernels.py
+24 passed in 0.04s
+$ python3 -m pytest tests/test_kernels.py -k reference
+17 passed, 4 deselected in 0.06s
+$ AST diff of src/c2p/kernels.py vs guide §12.1 (docstrings stripped)
+guide defs: 11 mismatched: [] extra: [product_all]
+$ forecast((1,0,0), baseline|extra_crew, 2)
+[0.36, 0.39, 0.25] [0.09, 0.28, 0.63]
 ```
 
 ### N2 — World schemas
