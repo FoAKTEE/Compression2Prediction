@@ -241,7 +241,7 @@ golden corpus world_verdicts.json: 307 cases (98 ok / 209 raises), verdict + nor
 
 ### N3 — Artifact store & run dirs
 
-- status: `pending`
+- status: `done`
 - depends: N2
 - substages: N3.1 canonical bytes → N3.2 storage (`store/records.py`, `store/artifacts.py`;
   memo test `test_hash_and_namespace`). TS: `server/src/store/` (decisions D12)
@@ -251,10 +251,18 @@ golden corpus world_verdicts.json: 307 cases (98 ok / 209 raises), verdict + nor
   - observed and simulated records separable only by explicit origin filter
   - tamper detection on read
   - path traversal rejected
-- commits:
-- verifier:
+- commits: the `feat(store)` artifact store commit
+- verifier (run by the orchestrator):
 
 ```text
+$ npx vitest run --project server
+ ✓ |server| packages/server/test/store.runs.test.ts (5 tests) 110ms
+ ✓ |server| packages/server/test/store.artifacts.test.ts (5 tests) 165ms
+ ✓ |server| packages/server/test/health.test.ts (1 test) 93ms
+ Test Files  3 passed (3)
+      Tests  11 passed (11)
+$ npx tsc -b -> exit 0
+mutation checks by the worker: removing re-hash-on-read, immutable names, conflicting-duplicate check, post-manifest block each fail a test
 ```
 
 ### N4 — Hypergraph + compiler
