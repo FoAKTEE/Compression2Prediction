@@ -296,7 +296,7 @@ test_budget_before_product: over-budget compile makes 0 calls to product/product
 
 ### N5 — Inference & interventions
 
-- status: `pending`
+- status: `done`
 - depends: N4
 - substages: N5.1 enumeration → N5.2 Bayes → N5.3 surgery (`inference/exact.py`,
   `inference/interventions.py`; memo tests `test_observe_vs_do`,
@@ -305,10 +305,19 @@ test_budget_before_product: over-budget compile makes 0 calls to product/product
   - surgery removes the original input dependence and leaves others fixed
   - §8.3 models A/B agree observationally and give 1 vs 1/2 under do(X=1)
   - counterfactual requests rejected
-- commits:
-- verifier:
+- commits: the `feat(inference)` commit
+- verifier (run by the orchestrator):
 
 ```text
+$ npx vitest run --project core
+ ✓ |core| packages/core/test/inference.filter.test.ts (5 tests) 22ms
+ ✓ |core| packages/core/test/inference.exact.test.ts (8 tests) 99ms
+ ✓ |core| packages/core/test/inference.interventions.test.ts (8 tests) 128ms
+ Test Files  25 passed (25)
+      Tests  873 passed (873)
+$ npx tsc -b packages/core packages/core/test -> exit 0 (inference exports wired)
+incident: P(resolved, t=2) baseline 0.25; do(crew=high) over [0,2) 0.63 (1e-12); [0,1) -> 0.45; [1,2) -> 0.46
+identification fixture: A and B agree observationally; do(X=1): P_A(Y=1)=1, P_B(Y=1)=1/2; counterfactual -> unsupported_counterfactual
 ```
 
 ### N6 — Compression & scaling

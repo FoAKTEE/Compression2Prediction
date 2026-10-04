@@ -54,3 +54,4 @@ export * from "./learn/index.js";
 export * from "./evaluate/index.js";
 export * from "./compress/index.js";
 export { lgamma } from "./numeric/lgamma.js";
+export * from "./inference/index.js";
