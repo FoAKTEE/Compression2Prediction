@@ -2,7 +2,8 @@
 
 Links are typed foreign keys with checked path equations (memo §1.1): a role,
 its holder, and its scope share one scenario; so do participations, claims,
-and the evidence they cite.
+and the evidence they cite. A participation role is a registered role scoped
+to events that the participant's kind may hold.
 """
 from __future__ import annotations
 
@@ -132,6 +133,14 @@ def validate_links(entities: Iterable[Entity], roles: Iterable[RoleAssignment],
             raise ValueError(f"{where}: {part.event_id!r} is a {event.primary_kind}, not an Event")
         if participant.primary_kind == "Event":
             raise ValueError(f"{where}: an Event cannot be a participant")
+        definition = registry.role(part.participation_role)
+        if participant.primary_kind not in definition.allowed_kinds:
+            raise ValueError(f"{where}: a {participant.primary_kind} cannot take part as "
+                             f"{part.participation_role!r} "
+                             f"(allowed {sorted(definition.allowed_kinds)})")
+        if "Event" not in definition.scope_kinds:
+            raise ValueError(f"{where}: role {part.participation_role!r} is not scoped to "
+                             f"events (scope {sorted(definition.scope_kinds)})")
         _check_evidence(where, part.meta, part.evidence_ids, evs)
 
     groups: dict[str, str] = {}

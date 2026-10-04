@@ -77,6 +77,9 @@ def fixture_registry() -> OntologyRegistry:
             RoleDef("Researcher", frozenset({"Person"}),
                     frozenset({"Organization", "Group"})),
             RoleDef("Participant", ACTORS, frozenset({"Event"})),
+            RoleDef("Organizer", ACTORS, frozenset({"Event"})),
+            RoleDef("Host", frozenset({"Organization", "Group"}), frozenset({"Event"})),
+            RoleDef("Venue", frozenset({"Location"}), frozenset({"Event"})),
             RoleDef("Employee", frozenset({"Person"}), frozenset({"Organization"})),
             RoleDef("Author", frozenset({"Person", "Organization"}), frozenset({"Artifact"})),
         ),
@@ -131,7 +134,7 @@ def six_entity_world() -> World:
         record(EventParticipation, event_id="ent_meeting", participant_entity_id=who,
                participation_role=role, valid_from=3, valid_to=4,
                evidence_ids=("ev_minutes_1",))
-        for who, role in (("ent_alice", "Organizer"), ("ent_bob", "Attendee"),
+        for who, role in (("ent_alice", "Organizer"), ("ent_bob", "Participant"),
                           ("ent_lab", "Host"), ("ent_room", "Venue")))
     claims = (
         record(Claim, claim_id="c_works_for", claim_kind="relation",

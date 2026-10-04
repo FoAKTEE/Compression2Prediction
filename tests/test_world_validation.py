@@ -153,17 +153,29 @@ def test_roles_and_kinds():
 def test_participation_kinds():
     w = six_entity_world()
     not_event = record(EventParticipation, event_id="ent_room",
-                       participant_entity_id="ent_bob", participation_role="Attendee",
+                       participant_entity_id="ent_bob", participation_role="Participant",
                        valid_from=None, valid_to=None, evidence_ids=())
     with pytest.raises(ValueError, match="not an Event"):
         _links(w, participations=(not_event,))
     second = entity("ent_meeting_2", "Follow-up", "Event", ("Meeting",))
     event_as_participant = record(EventParticipation, event_id="ent_meeting",
                                   participant_entity_id="ent_meeting_2",
-                                  participation_role="Part", valid_from=None,
+                                  participation_role="Participant", valid_from=None,
                                   valid_to=None, evidence_ids=())
     with pytest.raises(ValueError, match="cannot be a participant"):
         _links(w, entities=w.entities + (second,), participations=(event_as_participant,))
+    # The participation role is registered, held by the participant's kind, scoped to events.
+    def joins(who, role):
+        return record(EventParticipation, event_id="ent_meeting", participant_entity_id=who,
+                      participation_role=role, valid_from=None, valid_to=None,
+                      evidence_ids=())
+    _links(w, participations=(joins("ent_lab", "Participant"), joins("ent_room", "Venue")))
+    for who, role, message in (("ent_bob", "Attendee", "unknown role"),
+                               ("ent_bob", "Venue", "cannot take part"),
+                               ("ent_room", "Host", "cannot take part"),
+                               ("ent_bob", "Employee", "not scoped to events")):
+        with pytest.raises(ValueError, match=message):
+            _links(w, participations=(joins(who, role),))
     # n-ary meeting: several role-labeled participation records, no causal edges.
     assert Counter(p.event_id for p in w.participations) == {"ent_meeting": 4}
 
