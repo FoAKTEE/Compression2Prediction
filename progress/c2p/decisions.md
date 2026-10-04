@@ -747,3 +747,98 @@ say so explicitly and never rewrite history.
   contract with the response extensions (N14). A separately typed review
   ranking over the knowledge and event graphs belongs to the N8 follow-on
   (memo §3.1), not this route.
+
+## D23 — Certificate premises and scope, numerical allowance, underflow policy, typed plan sources
+
+- date: 2026-10-04
+- decision:
+  - Coefficient binding (review F01, C1). `nodeCoefficients(node, rows)`,
+    `declaredCoefficients(node, values, source)`, and
+    `floatCoefficients(node)` return coefficients whose `binding` is the
+    content hash of the node's output and input keys, ordered variable
+    groups, input and output Spaces, executed kernel hash (`kernel.v1`), and
+    exact rows (null for declared or float coefficients). `targetBounds`
+    re-derives the binding from the plan node each entry is applied to. A
+    mismatch raises, and unbound `coefficients(...)` tables are refused. A
+    stale coefficient therefore cannot certify a changed kernel.
+  - Explicit candidate and computed defects (F01, C3).
+    `certifyRemovals(bounds, { replacements, scope }, eps, options)`.
+    Each removed key carries its replacement kernel, or `null` for an
+    unknown constant replacement (local defect 1). A writer's replacement
+    reads its inputs (same source Space) or nothing (Unit). A source's
+    replacement is a prior from Unit. The certificate computes
+    e_i = max_x TV(original row, replacement row) exactly from the exact
+    rows (else the float rows read exactly) or from the source's prior.
+    `options.declaredDefects` yields only `conditional: { status:
+    "unverified", ... }`. `bound` and `accepted` always come from computed
+    defects.
+  - Scope (F01, C4). The required scope input is `{ initial, interventions,
+    horizon, conditioning: "none" }`. The certificate records
+    `scope = { initial_law_hash, interventions_hash, horizon, conditioning,
+    scope_hash }`, and its content hash covers the scope. It raises when the
+    scope does not fit the bounded plan: an ancestor source without a
+    prior, interventions listed for an unintervened plan (or the reverse),
+    or keys past the horizon. `model_hash` still does not cover priors.
+    `initialLawHash(initial)` (order-independent, validated) is exported.
+    `runQuery` results carry `initial_law_hash`, and forecast runs write it
+    into `scenario.json`.
+  - Numerical allowance (F02, C2). Certificates are about the executed
+    float kernels. Per node, η_i = max_x TV(exact row,
+    `Rational.fromNumber(float row)`), computed exactly. The bound uses
+    c_used = min(1, c_exact + 2η_i) for variables with at least two values.
+    A one-value variable has no row pair, so its 0 stays exact. η_i is
+    added to a replaced writer's defect. `TargetBounds.bounds` holds the
+    executed bounds, `exact_bounds` the exact-row ones, and `allowances`
+    the η_i. `numerical_allowance` = B_D − B_D(exact). An ε at or below it
+    raises: no certificate is supported at that tolerance. The 1e-12 entry
+    match stays only to reject rows describing another kernel.
+  - Underflow (F04, C6, B3). `exact.ts`, `posterior` (and so `update`),
+    and `filterSequence` first compute in linear space. If a positive
+    factor product falls below 2^-1022 (zero or subnormal), they redo the
+    computation in log space with max-shift normalization. `filterSequence`
+    then carries the belief in log space for the remaining steps.
+    Structural zeros stay zero. Only true zero evidence raises. The linear
+    path is unchanged, so golden parity is bit-identical.
+  - Typed plan sources (F05, C7). `Plan.sources: readonly { key, space }[]`
+    (frozen, key order, duplicates raise; optional in the constructor,
+    default none). `compilePlan` sets it from the declared sources, typed
+    through the registry, plus every unwritten exogenous read. The sources
+    and their Spaces are hashed into `model_hash` (schema `plan.v2`), not
+    `graph_hash`, which stays the instance hypergraph hash. `indexPlan`
+    indexes them first, so a source nobody reads is a queryable key, and a
+    node writing a declared source raises. Surgery keeps the declarations,
+    minus sources a hard assignment now writes. Clamping an unread source
+    raises. Slices type every root, including isolated targets and
+    evidence: `sliceFromPlan` uses the full plan's Spaces, and
+    `backwardSlice` uses readers or `options.sourceSpace`, else it raises.
+    Slice hashes are schema `plan.slice.v2`.
+  - Server rank route. Single-node certificates use `[[key, null]]`
+    (model-free, defect 1), scoped to the model's `initial` priors, the
+    replayed interventions (`intervention` scenario) or none, the plan's
+    horizon, and no conditioning. The response adds `certificate_scope`
+    (null when the run is conditioned). Served `influence_bound`s are the
+    executed bounds, at most a few ulps above the exact decimals. Supply
+    stays exactly 0 and is still the only certified key at 0.05. A
+    tolerance refused by the allowance is reported as not certified.
+- why: review N5/N6 F01, F02, F04, F05. The coupling bound is sound only
+  under its premises: matched kernel, actual replacement, frozen initial
+  law, and unconditioned query. Labels such as `exact` and `accepted` must
+  establish those premises, not repeat caller claims. Memo §3.3:
+  c_true ≤ min(1, ĉ + 2η), and float execution needs a numerical allowance.
+  Invariant 10: zero probability raises, so underflow must not invent zeros.
+  Invariant 11: the hashes cover the artifacts they name.
+- alternatives:
+  - Fold priors into `model_hash`. Rejected: the plan is query-independent.
+    Priors are query inputs, so they get their own hash in each scope or
+    result.
+  - Exact coefficients of the float rows instead of c + 2η. Rejected: float
+    rows need not sum exactly to 1, so they are not exact distributions.
+  - Return an unaccepted certificate for ε below the allowance. Rejected:
+    no removal set can be certified there, so the request is refused.
+  - Put sources into `graph_hash`. Rejected: tests and the hypergraph
+    contract pin `graph_hash` to `graphHash(instances)`.
+- next: add `certificate_scope` (and the `RankResponse` shape) to
+  `wire.ts` and the frontend contract. Re-export `SourceDecl` and
+  `checkSources` from `causal/index.ts`; `initialLawHash` already reaches
+  the package root through the compress barrel. A cumulative removal-set
+  endpoint can pass concrete replacement kernels.

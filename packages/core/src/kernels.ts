@@ -203,7 +203,28 @@ export function constant(parentSpace: Space, outputSpace: Space, value: string):
   return new Kernel(parentSpace, outputSpace, parentSpace.values.map(() => row));
 }
 
-/** Bayesian update using an emission kernel State -> Observation. */
+/** Smallest positive normal double; a product below it has lost relative precision. */
+export const MIN_NORMAL = 2 ** -1022;
+
+/**
+ * Normalize positive factor products in log space: ``logs[i]`` is the log
+ * weight (-Infinity for a structural zero). Null when every weight is zero.
+ */
+export function normalizeLogWeights(logs: readonly number[]): number[] | null {
+  let max = Number.NEGATIVE_INFINITY;
+  for (const l of logs) if (l > max) max = l;
+  if (max === Number.NEGATIVE_INFINITY) return null;
+  const scaled = logs.map((l) => (l === Number.NEGATIVE_INFINITY ? 0 : Math.exp(l - max)));
+  const total = fsum(scaled);
+  return scaled.map((v) => v / total);
+}
+
+/**
+ * Bayesian update using an emission kernel State -> Observation. If a
+ * positive prior x likelihood product underflows (to zero or a subnormal),
+ * the update is redone in log space; structural zeros stay zero, and only a
+ * true zero evidence raises.
+ */
 export function posterior(prior: Iterable<number>, emission: Kernel, observed: string): Vector {
   const p = probabilityVector(prior, emission.source.values.length);
   if (!emission.target.values.includes(observed)) {
@@ -211,6 +232,11 @@ export function posterior(prior: Iterable<number>, emission: Kernel, observed: s
   }
   const j = emission.target.values.indexOf(observed);
   const weights = p.map((pi, i) => pi * emission.rows[i]![j]!);
+  const lost = p.some((pi, i) => pi > 0 && emission.rows[i]![j]! > 0 && !(weights[i]! >= MIN_NORMAL));
+  if (lost) {
+    const logs = p.map((pi, i) => Math.log(pi) + Math.log(emission.rows[i]![j]!));
+    return Object.freeze(normalizeLogWeights(logs)!);
+  }
   const evidence = fsum(weights);
   if (evidence <= 0.0) {
     throw new ValueError("Observation has zero probability under this model");

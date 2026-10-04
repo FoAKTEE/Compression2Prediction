@@ -1,10 +1,11 @@
 /** Rank/influence diagnostics of a forecast run (memo §3, D22), on the guide §13 incident example. */
-import { applyInterventions, fsum } from "@c2p/core";
+import { applyInterventions, certificateScope, fsum, initialLawHash } from "@c2p/core";
 import type { FastifyInstance } from "fastify";
 import { afterEach, describe, expect, it } from "vitest";
 import { loadConfig } from "../src/config.js";
 import { loadRunPlan } from "../src/forecast/plan.js";
 import { RANK_NOTE } from "../src/forecast/rank.js";
+import type { RankResponse } from "../src/forecast/rank.js";
 import { toCore } from "../src/forecast/service.js";
 import type { ForecastResult } from "../src/forecast/types.js";
 import type { BuildAppOptions } from "../src/app.js";
@@ -57,10 +58,10 @@ async function forecast(app: FastifyInstance, id: string, body: object): Promise
 
 const rankUrl = (id: string, runId: string, query = "") => `/api/forecast/projects/${id}/runs/${runId}/rank${query}`;
 
-async function rank(app: FastifyInstance, id: string, runId: string, query = ""): Promise<RankDiagnosticsResponse> {
+async function rank(app: FastifyInstance, id: string, runId: string, query = ""): Promise<RankResponse> {
   const res = await app.inject({ method: "GET", url: rankUrl(id, runId, query) });
   expect(res.statusCode, res.body).toBe(200);
-  return res.json() as RankDiagnosticsResponse;
+  return res.json() as RankResponse;
 }
 
 async function setup(options: BuildAppOptions = {}, model?: ModelJson) {
@@ -87,6 +88,7 @@ describe("rank diagnostics: baseline", () => {
     expect(Object.keys(r).sort()).toEqual(
       [
         "bounds_hash",
+        "certificate_scope",
         "damping",
         "entries",
         "eps_tv",
@@ -145,9 +147,13 @@ describe("rank diagnostics: baseline", () => {
     expect(e.get("mechanism_incident_progress@t1")!.score).toBe(e.get(TARGET)!.score);
     expect(e.get("mechanism_incident_progress@t0")!.score).toBe(e.get(STATUS(1))!.score);
 
-    // Exact bounds: c_status = 9/10, c_crew = 3/10, c_supply = 0 (one supply value), for both writers.
+    // Exact-row bounds: c_status = 9/10, c_crew = 3/10, c_supply = 0 (one supply value), for both writers.
+    // Served bounds cover the executed float kernel (D23): its decimal rows (0.6, 0.3, ...) are not binary
+    // fractions, so each row is within η ≈ 1e-17 of the exact one and each coefficient gets + 2η. The
+    // bounds are therefore never below the exact values and at most a few ulps above them. Supply stays
+    // exactly 0: with one value there is no pair of rows to differ.
     const bounds = Object.fromEntries(r.entries.map((x) => [x.node_id, x.influence_bound]));
-    expect(bounds).toEqual({
+    const exact = {
       [STATUS(2)]: 1,
       [STATUS(1)]: 0.9,
       [STATUS(0)]: 0.81,
@@ -157,13 +163,29 @@ describe("rank diagnostics: baseline", () => {
       [SUPPLY(0)]: 0,
       "mechanism_incident_progress@t1": 1,
       "mechanism_incident_progress@t0": 0.9,
-    });
+    };
+    expect(Object.keys(bounds).sort()).toEqual(Object.keys(exact).sort());
+    for (const [k, v] of Object.entries(exact)) {
+      expect(bounds[k]!, k).toBeGreaterThanOrEqual(v);
+      expect(bounds[k]! - v, k).toBeLessThan(1e-15);
+    }
+    for (const k of [STATUS(2), SUPPLY(1), SUPPLY(0), "mechanism_incident_progress@t1"]) expect(bounds[k], k).toBe(exact[k]);
     expect(e.get(CREW(0))!.influence_bound!).toBeGreaterThan(0);
     expect(e.get(CREW(1))!.influence_bound!).toBeGreaterThan(0);
     // PPR ties crew and supply; only the kernel tells them apart.
     expect(e.get(CREW(1))!.score).toBe(e.get(SUPPLY(1))!.score);
     // At eps 0.05 only the supply keys are certified.
     expect(r.entries.filter((x) => x.certified_prunable).map((x) => x.node_id).sort()).toEqual([SUPPLY(0), SUPPLY(1)].sort());
+    // The certificates' scope: the model's initial law, no interventions, the run's horizon, no conditioning.
+    const model = loadRunPlan(app.c2p, id, { planVersion: base.plan_version, modelVersion: base.model_version, worldVersion: base.provenance.world_version }).model;
+    const scope = certificateScope({
+      initial: model.model.initial.map((p) => [p.key, p.distribution] as const),
+      interventions: [],
+      horizon: 2,
+      conditioning: "none",
+    });
+    expect(r.certificate_scope).toEqual({ ...scope });
+    expect(r.certificate_scope!.initial_law_hash).toBe(initialLawHash(model.model.initial.map((p) => [p.key, p.distribution] as const)));
 
     // Deterministic; the stored run is untouched.
     expect(await rank(app, id, base.run_id, "?scenario=baseline")).toEqual(r);
@@ -203,14 +225,25 @@ describe("rank diagnostics: intervention scenario", () => {
       "mechanism_incident_progress@t0",
       "mechanism_incident_progress@t1",
     ]);
-    // The incident kernel is unchanged, so its crew coefficient still carries 3/10 per step.
-    expect(e.get("do(crew_capacity=high)@t1")).toMatchObject({ influence_bound: 0.3, certified_prunable: false, score: e.get(CREW(1))!.score });
-    expect(e.get("do(crew_capacity=high)@t0")).toMatchObject({ influence_bound: 0.27, certified_prunable: false, score: e.get(CREW(0))!.score });
+    // The incident kernel is unchanged, so its crew coefficient still carries 3/10 per step, plus the float
+    // allowance 2η of its decimal rows (D23): a few ulps, never below the exact bound.
+    for (const [id, exact, crew] of [
+      ["do(crew_capacity=high)@t1", 0.3, CREW(1)],
+      ["do(crew_capacity=high)@t0", 0.27, CREW(0)],
+    ] as const) {
+      expect(e.get(id)).toMatchObject({ certified_prunable: false, score: e.get(crew)!.score, influence_bound: e.get(crew)!.influence_bound });
+      expect(e.get(id)!.influence_bound!).toBeGreaterThanOrEqual(exact);
+      expect(e.get(id)!.influence_bound! - exact).toBeLessThan(1e-15);
+    }
     // An input-less writer adds no reverse transition: variable scores and bounds equal the baseline's.
     const b = byId(baseline);
     for (const k of VARIABLES) expect(e.get(k)).toEqual(b.get(k));
     expect(r.score_artifact_hash).not.toBe(baseline.score_artifact_hash);
     expect(r.bounds_hash).not.toBe(baseline.bounds_hash);
+    // The replayed interventions are part of the certificate scope; the initial law is the same.
+    expect(r.certificate_scope!.initial_law_hash).toBe(baseline.certificate_scope!.initial_law_hash);
+    expect(r.certificate_scope!.interventions_hash).not.toBe(baseline.certificate_scope!.interventions_hash);
+    expect(r.certificate_scope!.scope_hash).not.toBe(baseline.certificate_scope!.scope_hash);
   });
 });
 

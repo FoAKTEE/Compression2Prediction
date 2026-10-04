@@ -5,17 +5,19 @@
  * order, one variable at a time. Every source among them takes exactly one
  * prior, so a shared latent root is one variable and the dependence it induces
  * is kept (guide §3.3, §6.3). Evidence conditions by Bayes and never edits the
- * plan (guide §8.1); zero evidence probability raises.
+ * plan (guide §8.1); zero evidence probability raises. A positive product
+ * that underflows reruns the enumeration in log space, so tiny likelihoods
+ * keep their ratios and only structural zeros count as impossible.
  */
 import { Budget, Plan } from "../causal/compiler.js";
 import type { PlanNode } from "../causal/compiler.js";
 import { checkVariableKey, compareKeys, variableKeyString } from "../causal/hypergraph.js";
 import type { VariableKey } from "../causal/hypergraph.js";
 import { ValueError } from "../errors.js";
-import { probabilityVector, productAll } from "../kernels.js";
+import { MIN_NORMAL, probabilityVector, productAll } from "../kernels.js";
 import type { Space, Vector } from "../kernels.js";
 import { fsum } from "../numeric/fsum.js";
-import { requireFields } from "../store/records.js";
+import { contentHash, requireFields } from "../store/records.js";
 import { repr } from "../store/repr.js";
 import { indexPlan, isHardInterventionNode, isInterventionNode } from "./plan.js";
 import type { PlanIndex } from "./plan.js";
@@ -183,42 +185,74 @@ function enumerate(plan: unknown, targetKeys: readonly VariableKey[], options: R
     };
   });
 
-  // Mixed radix over the slots so far, the latest slot fastest.
-  const strides: number[] = [];
+  // Mixed radix over the slots, the latest slot fastest.
+  const strides: number[] = new Array<number>(slots.length);
+  for (let s = slots.length - 1, n = 1; s >= 0; n *= slots[s]!.size, s--) strides[s] = n;
   const valueAt = (p: number, i: number): number => {
     const slot = slots[p]!;
     return slot.fixed ?? Math.floor(i / strides[p]!) % slot.size;
   };
-  let weights = new Float64Array([1]);
-  slots.forEach((slot, s) => {
-    const next = new Float64Array(weights.length * slot.size);
+  // Row of slot ``s`` at index ``i`` over slots 0..s-1: context over the left-folded input product, right factor fastest.
+  const rowAt = (s: number, i: number): Vector => {
+    const slot = slots[s]!;
+    if (slot.node === null) return slot.prior!;
+    const at = i * slot.size * strides[s]!;
+    let context = 0;
+    for (let p = 0; p < slot.parents.length; p++) context = context * slot.parentSizes[p]! + valueAt(slot.parents[p]!, at);
+    return slot.node.operator.rows[context]!;
+  };
+
+  // Linear weights; a positive product below the normal range aborts to log space.
+  let weights: Float64Array | null = new Float64Array([1]);
+  for (let s = 0; s < slots.length && weights !== null; s++) {
+    const slot = slots[s]!;
+    const next: Float64Array = new Float64Array(weights.length * slot.size);
     for (let i = 0; i < weights.length; i++) {
       const w = weights[i]!;
       if (w === 0) continue;
-      let row: Vector;
-      if (slot.node === null) {
-        row = slot.prior!;
-      } else {
-        // Context index over the left-folded input product, right factor fastest.
-        let context = 0;
-        for (let p = 0; p < slot.parents.length; p++) context = context * slot.parentSizes[p]! + valueAt(slot.parents[p]!, i);
-        row = slot.node.operator.rows[context]!;
+      const row = rowAt(s, i);
+      for (let j = 0; j < slot.size; j++) {
+        const r = row[slot.fixed ?? j]!;
+        const v = w * r;
+        if (r > 0 && !(v >= MIN_NORMAL)) {
+          weights = null;
+          break;
+        }
+        next[i * slot.size + j] = v;
       }
-      if (slot.fixed !== null) next[i] = w * row[slot.fixed]!;
-      else for (let j = 0; j < slot.size; j++) next[i * slot.size + j] = w * row[j]!;
+      if (weights === null) break;
     }
-    for (let p = 0; p < s; p++) strides[p]! *= slot.size;
-    strides[s] = 1;
-    weights = next;
-  });
+    if (weights !== null) weights = next;
+  }
+  let logs: Float64Array | null = null;
+  if (weights === null) {
+    logs = new Float64Array([0]);
+    slots.forEach((slot, s) => {
+      const next = new Float64Array(logs!.length * slot.size).fill(Number.NEGATIVE_INFINITY);
+      for (let i = 0; i < logs!.length; i++) {
+        const l = logs![i]!;
+        if (l === Number.NEGATIVE_INFINITY) continue;
+        const row = rowAt(s, i);
+        for (let j = 0; j < slot.size; j++) next[i * slot.size + j] = l + Math.log(row[slot.fixed ?? j]!);
+      }
+      logs = next;
+    });
+  }
 
   const targetSlots = targets.map((k) => position.get(k)!);
   const targetSpaces = targets.map((k) => idx.spaces.get(k)!);
   const space = productAll(targetSpaces);
   const terms: number[][] = space.values.map(() => []);
   const all: number[] = [];
-  for (let i = 0; i < weights.length; i++) {
-    const w = weights[i]!;
+  // Log weights are shifted by their maximum before exponentiation.
+  let shift = 0;
+  if (logs !== null) {
+    shift = Number.NEGATIVE_INFINITY;
+    for (const l of logs) if (l > shift) shift = l;
+  }
+  const n = (weights ?? logs)!.length;
+  for (let i = 0; i < n; i++) {
+    const w = weights !== null ? weights[i]! : logs![i]! === Number.NEGATIVE_INFINITY ? 0 : Math.exp(logs![i]! - shift);
     if (w === 0) continue;
     let t = 0;
     targetSlots.forEach((p, q) => {
@@ -242,6 +276,33 @@ function enumerate(plan: unknown, targetKeys: readonly VariableKey[], options: R
     query_kind: intervened ? "interventional" : observed.size > 0 ? "conditional" : "observational",
     effect_status: intervened ? "model_based_intervention" : "not_applicable",
   });
+}
+
+/** Validated priors of an initial law, each a probability vector, sorted by key; duplicates raise. */
+export function checkInitialLaw(value: unknown): [VariableKey, Vector][] {
+  const seen = new Set<string>();
+  const out = pairs(value, "initial").map(([rawKey, rawPrior], i): [VariableKey, Vector] => {
+    const key = checkVariableKey(rawKey, `initial[${i}] key`);
+    const k = variableKeyString(key);
+    if (seen.has(k)) throw new ValueError(`initial[${i}]: duplicate prior for ${k}`);
+    seen.add(k);
+    if (!Array.isArray(rawPrior)) throw new ValueError(`initial[${i}]: prior for ${k} must be an array of numbers`);
+    try {
+      return [key, probabilityVector(rawPrior as number[], rawPrior.length)];
+    } catch (error) {
+      if (error instanceof ValueError) throw new ValueError(`initial[${i}]: prior for ${k}: ${error.message}`);
+      throw error;
+    }
+  });
+  return out.sort((a, b) => compareKeys(a[0], b[0]));
+}
+
+/**
+ * Content hash of an initial law (source priors), independent of list order.
+ * ``model_hash`` covers mechanisms and typed sources, never their priors.
+ */
+export function initialLawHash(initial: readonly Prior[]): string {
+  return contentHash({ schema: "initial_law.v1", priors: checkInitialLaw(initial).map(([key, p]) => [[...key], [...p]]) });
 }
 
 const QUERY_FIELDS = Object.freeze(["target", "initial", "budget"]);

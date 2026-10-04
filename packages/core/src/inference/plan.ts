@@ -24,7 +24,7 @@ export function isHardInterventionNode(node: PlanNode): boolean {
 
 export interface PlanIndex {
   readonly plan: Plan;
-  /** Every key the plan reads or writes, by canonical string. */
+  /** Every key the plan declares as a source, reads, or writes, by canonical string. */
   readonly keys: ReadonlyMap<string, VariableKey>;
   readonly spaces: ReadonlyMap<string, Space>;
   /** Writer node index per written key. */
@@ -50,12 +50,15 @@ export function indexPlan(plan: unknown): PlanIndex {
     }
     return k;
   };
+  // Declared sources first: a source no node reads is still a typed, queryable key.
+  const declared = new Set(plan.sources.map((d) => see(d.key, d.space, `source ${variableKeyString(d.key)}`)));
   plan.nodes.forEach((node, i) => {
     const where = `plan node ${i} (${repr(node.mechanism_id)})`;
     // Single-output MVP (guide §5.3): one key per node, so a partial joint-output intervention cannot arise.
     const out = see(checkVariableKey(node.output, `${where} output`), node.output_space, where);
     const other = writers.get(out);
     if (other !== undefined) throw new ValueError(`${where}: ${out} is also written by plan node ${other}`);
+    if (declared.has(out)) throw new ValueError(`${where}: writes declared source ${out}`);
     writers.set(out, i);
     node.inputs.forEach((key, port) => {
       const k = see(key, node.input_spaces[port]!, where);

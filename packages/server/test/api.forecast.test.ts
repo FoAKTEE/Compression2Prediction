@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
-import { contentHash, ValueError } from "@c2p/core";
+import { contentHash, initialLawHash, ValueError } from "@c2p/core";
+import type { VariableKey } from "@c2p/core";
 import { afterEach, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
 import type { ForecastResult } from "../src/forecast/types.js";
@@ -440,6 +441,10 @@ describe("forecast execution: the guide §13 incident example", () => {
     const stored = readJson(path.join(dir, "forecasts.json"));
     expect(stored.baseline).toEqual(done.baseline);
     expect(stored.intervention).toEqual(done.intervention);
+    // model_hash does not cover priors, so the scenario records the initial law's hash (D23).
+    const scenario = readJson(path.join(dir, "scenario.json")) as { initial: { key: VariableKey; distribution: number[] }[]; initial_law_hash: string };
+    expect(scenario.initial.length).toBeGreaterThan(0);
+    expect(scenario.initial_law_hash).toBe(initialLawHash(scenario.initial.map((p) => [p.key, p.distribution] as const)));
 
     const before = snapshot(dir);
     const handle = new RunDir(app.c2p.artifacts.root, done.run_id);

@@ -19,6 +19,7 @@ import {
   checkInstances,
   checkVariableKey,
   compareInstances,
+  compareKeys,
   graphHash,
   MechanismInstance,
   variableKeyString,
@@ -115,28 +116,61 @@ export class PlanNode implements PlanNodeFields {
   }
 }
 
+/** A typed source: a key with no writer that takes a prior (initial state or exogenous input). */
+export interface SourceDecl {
+  readonly key: VariableKey;
+  readonly space: Space;
+}
+
+/** Validated, frozen source declarations in key order; duplicates raise. */
+export function checkSources(value: unknown, field = "sources"): readonly SourceDecl[] {
+  if (!Array.isArray(value)) throw new ValueError(`${field}: expected an array of {key, space}, got ${repr(value)}`);
+  const seen = new Set<string>();
+  const out = (value as unknown[]).map((d, i) => {
+    if (typeof d !== "object" || d === null) throw new ValueError(`${field}[${i}]: expected {key, space}, got ${repr(d)}`);
+    const { key: rawKey, space } = d as { key?: unknown; space?: unknown };
+    const key = checkVariableKey(rawKey, `${field}[${i}].key`);
+    if (!(space instanceof Space)) throw new ValueError(`${field}[${i}].space: expected a Space, got ${repr(space)}`);
+    const k = variableKeyString(key);
+    if (seen.has(k)) throw new ValueError(`${field}: duplicate source ${k}`);
+    seen.add(k);
+    return Object.freeze({ key, space });
+  });
+  out.sort((a, b) => compareKeys(a.key, b.key));
+  return Object.freeze(out);
+}
+
+/** Canonical JSON of source declarations, for hashing. */
+export function sourcesJson(sources: readonly SourceDecl[]): { key: unknown[]; space: { name: string; values: string[] } }[] {
+  return sources.map((d) => ({ key: [...d.key], space: spaceJson(d.space) }));
+}
+
 export interface PlanFields {
   readonly nodes: readonly PlanNode[];
   readonly graph_hash: string;
   readonly model_hash: string;
+  /** Typed sources, including ones no node reads; default none. */
+  readonly sources?: readonly SourceDecl[];
 }
 
-/** Nodes in topological order; hashes cover the incidences and the kernel payloads. */
+/** Nodes in topological order; hashes cover the incidences, the kernel payloads, and the typed sources. */
 export class Plan implements PlanFields {
-  static readonly fields: readonly string[] = Object.freeze(["nodes", "graph_hash", "model_hash"]);
+  static readonly fields: readonly string[] = Object.freeze(["nodes", "graph_hash", "model_hash", "sources"]);
 
   readonly nodes: readonly PlanNode[];
   readonly graph_hash: string;
   readonly model_hash: string;
+  readonly sources: readonly SourceDecl[];
 
   constructor(fields: PlanFields) {
-    const f = constructorFields(fields, Plan);
+    const f = constructorFields(fields, Plan, ["sources"]);
     if (!Array.isArray(f.nodes) || !(f.nodes as unknown[]).every((n) => n instanceof PlanNode)) {
       throw new ValueError(`nodes: expected an array of PlanNode, got ${repr(f.nodes)}`);
     }
     this.nodes = Object.freeze([...(f.nodes as PlanNode[])]);
     this.graph_hash = asHash(f.graph_hash, "graph_hash");
     this.model_hash = asHash(f.model_hash, "model_hash");
+    this.sources = checkSources(f.sources ?? []);
     Object.freeze(this);
   }
 }
@@ -149,7 +183,7 @@ export interface CompileOptions {
   readonly templates: readonly TemplateSpec[];
   readonly kernels: (ref: string) => Kernel | undefined;
   readonly budget: Budget;
-  /** Declared source / initial-state keys of endogenous variables. */
+  /** Declared source / initial-state keys; with unwritten exogenous reads they become ``Plan.sources``. */
   readonly sources: readonly VariableKey[];
 }
 
@@ -476,18 +510,20 @@ export function compilePlan(instances: readonly MechanismInstance[], options: Co
   });
 
   const declared = new Set<string>();
+  const decls: SourceDecl[] = [];
   for (const key of sources) {
     const k = variableKeyString(key);
     if (declared.has(k)) throw new ValueError(`duplicate source ${k}`);
     if (key[0] !== scenario) throw new ValueError(`source ${k} is not in scenario ${repr(scenario)} (cross-scenario key)`);
     const entity = entities.get(key[2]);
     if (entity === undefined) throw new ValueError(`source ${k}: unknown entity ${repr(key[2])}`);
-    resolveSpace(registry.get(key[1]), entity.primary_kind);
+    const space = resolveSpace(registry.get(key[1]), entity.primary_kind);
     const writer = writers.get(k);
     if (writer !== undefined) {
       throw new ValueError(`source ${k} is also written by ${repr(nodes[writer]!.mechanism_id)}`);
     }
     declared.add(k);
+    decls.push({ key, space });
   }
 
   const indegree = nodes.map(() => 0);
@@ -506,6 +542,11 @@ export function compilePlan(instances: readonly MechanismInstance[], options: Co
           `mechanism ${repr(node.mechanism_id)} port ${port} reads endogenous ${k}, ` +
             "which has no writer and is not a declared source",
         );
+      }
+      // An exogenous read without a writer is a source too.
+      if (!declared.has(k)) {
+        declared.add(k);
+        decls.push({ key, space: node.input_spaces[port]! });
       }
     });
   });
@@ -540,10 +581,11 @@ export function compilePlan(instances: readonly MechanismInstance[], options: Co
   const graph_hash = graphHash(list);
   const kernels = new Map<string, Kernel>();
   for (const node of nodes) kernels.set(node.kernel_ref, node.operator);
+  const typed = checkSources(decls);
   const model_hash = contentHash({
-    schema: "plan.v1",
+    schema: "plan.v2",
     graph_hash,
-    sources: sources.map(variableKeyString).sort(compareCodePoints),
+    sources: sourcesJson(typed),
     kernels: [...kernels.keys()].sort(compareCodePoints).map((ref) => {
       const kernel = kernels.get(ref)!;
       return {
@@ -554,5 +596,5 @@ export function compilePlan(instances: readonly MechanismInstance[], options: Co
       };
     }),
   });
-  return new Plan({ nodes: order.map((i) => nodes[i]!), graph_hash, model_hash });
+  return new Plan({ nodes: order.map((i) => nodes[i]!), graph_hash, model_hash, sources: typed });
 }

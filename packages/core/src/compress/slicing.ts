@@ -8,12 +8,15 @@
  * traversing. Barren descendants
  * are never visited, so cost is O(V_Q + E_Q). The collected writers compile
  * to a topological, hashed sub-plan whose exact answers equal the full plan's.
+ * Every root, including a target or evidence key no collected writer reads,
+ * stays in the sub-plan as a typed source declaration.
  */
-import { Budget, Plan, PlanNode } from "../causal/compiler.js";
+import { Budget, checkSources, Plan, PlanNode, sourcesJson } from "../causal/compiler.js";
+import type { SourceDecl } from "../causal/compiler.js";
 import { checkVariableKey, compareKeys, graphHash, MechanismInstance, variableKeyString } from "../causal/hypergraph.js";
 import type { VariableKey } from "../causal/hypergraph.js";
 import { ValueError } from "../errors.js";
-import { kernelEquals } from "../kernels.js";
+import { kernelEquals, spaceEquals } from "../kernels.js";
 import type { Kernel, Space } from "../kernels.js";
 import { indexPlan, isHardInterventionNode } from "../inference/plan.js";
 import { compareCodePoints, contentHash } from "../store/records.js";
@@ -24,6 +27,8 @@ export type Producer = (key: VariableKey) => PlanNode | undefined;
 export interface SliceOptions {
   /** Cut keys: never expanded and given a prior, unless surgery wrote a zero-input hard assignment. */
   readonly sources?: readonly VariableKey[];
+  /** Space of a root that no collected writer reads (an isolated target or evidence key). */
+  readonly sourceSpace?: (key: VariableKey) => Space | undefined;
 }
 
 export interface Slice {
@@ -33,7 +38,7 @@ export interface Slice {
   readonly query_slice_hash: string;
   readonly targets: readonly VariableKey[];
   readonly evidence: readonly VariableKey[];
-  /** Keys read but not written in the slice (roots and declared sources), by key order. */
+  /** Keys read or queried but not written in the slice (roots and declared sources), by key order; ``plan.sources`` types them. */
   readonly roots: readonly VariableKey[];
   readonly producer_calls: number;
 }
@@ -128,7 +133,7 @@ function topologicalByKey(nodes: readonly PlanNode[]): PlanNode[] {
   return topological(sorted, (n) => position.get(n)!);
 }
 
-function sliceHashes(nodes: readonly PlanNode[], roots: readonly VariableKey[]): { graph_hash: string; model_hash: string } {
+function sliceHashes(nodes: readonly PlanNode[], sources: readonly SourceDecl[]): { graph_hash: string; model_hash: string } {
   const graph_hash = graphHash(
     nodes.map(
       (n) =>
@@ -150,9 +155,9 @@ function sliceHashes(nodes: readonly PlanNode[], roots: readonly VariableKey[]):
     kernels.set(node.kernel_ref, node.operator);
   }
   const model_hash = contentHash({
-    schema: "plan.slice.v1",
+    schema: "plan.slice.v2",
     graph_hash,
-    roots: roots.map(variableKeyString),
+    sources: sourcesJson(sources),
     kernels: [...kernels.keys()].sort(compareCodePoints).map((ref) => {
       const k = kernels.get(ref)!;
       return { kernel_ref: ref, source: spaceJson(k.source), target: spaceJson(k.target), rows: k.rows.map((r) => [...r]) };
@@ -177,6 +182,7 @@ function slice(
   budget: unknown,
   sourcesIn: unknown,
   rank: ((node: PlanNode) => number) | null,
+  sourceSpace: ((key: VariableKey) => Space | undefined) | undefined,
 ): Slice {
   const targets = keyList(targetsIn, "targets");
   if (targets.length === 0) throw new ValueError("targets: expected at least one query key");
@@ -227,9 +233,27 @@ function slice(
   // Roots: read keys without a writer in the slice (a clamped source is written, so not a root).
   const written = new Set(nodes.map((n) => variableKeyString(n.output)));
   const rootKeys = uniqueSorted(roots.filter((key) => !written.has(variableKeyString(key))));
+  // Type each root by its readers' port Space, else by the caller (isolated targets and evidence).
+  const readSpace = new Map<string, Space>();
+  for (const node of nodes) node.inputs.forEach((key, port) => readSpace.set(variableKeyString(key), node.input_spaces[port]!));
+  const typed = checkSources(
+    rootKeys.map((key) => {
+      const k = variableKeyString(key);
+      const read = readSpace.get(k);
+      const declared = sourceSpace?.(key);
+      if (declared !== undefined && read !== undefined && !spaceEquals(declared, read)) {
+        throw new ValueError(`slice: source ${k} is declared ${repr(declared.name)} but read as ${repr(read.name)}`);
+      }
+      const space = read ?? declared;
+      if (space === undefined) {
+        throw new ValueError(`slice: source ${k} has no reader in the slice and no declared Space (options.sourceSpace)`);
+      }
+      return { key, space };
+    }),
+  );
   const order = rank === null ? topologicalByKey(nodes) : topological(nodes, rank);
-  const { graph_hash, model_hash } = sliceHashes(order, rootKeys);
-  const plan = new Plan({ nodes: order, graph_hash, model_hash });
+  const { graph_hash, model_hash } = sliceHashes(order, typed);
+  const plan = new Plan({ nodes: order, graph_hash, model_hash, sources: typed });
   const t = uniqueSorted(targets);
   const e = uniqueSorted(evidence);
   const query_slice_hash = contentHash({
@@ -262,7 +286,10 @@ export function backwardSlice(
   options: SliceOptions = {},
 ): Slice {
   if (typeof options !== "object" || options === null) throw new ValueError(`options: expected an object, got ${repr(options)}`);
-  return slice(targets, evidence, producer, budget, options.sources, null);
+  if (options.sourceSpace !== undefined && typeof options.sourceSpace !== "function") {
+    throw new ValueError(`sourceSpace: expected a function, got ${repr(options.sourceSpace)}`);
+  }
+  return slice(targets, evidence, producer, budget, options.sources, null, options.sourceSpace);
 }
 
 /** Slice of a compiled (possibly intervened) plan; keeps the plan's relative node order. */
@@ -282,5 +309,5 @@ export function sliceFromPlan(
     const w = idx.writers.get(variableKeyString(key));
     return w === undefined ? undefined : plan.nodes[w];
   };
-  return slice(targets, evidence, producer, budget, [], (n) => position.get(n)!);
+  return slice(targets, evidence, producer, budget, [], (n) => position.get(n)!, (key) => idx.spaces.get(variableKeyString(key)));
 }

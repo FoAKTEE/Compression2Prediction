@@ -6,17 +6,20 @@ import { backwardSlice, sliceFromPlan } from "../src/compress/slicing.js";
 import type { Producer } from "../src/compress/slicing.js";
 import { applyInterventions, exactJoint, exactQuery } from "../src/inference/index.js";
 import type { EvidencePair, Prior } from "../src/inference/index.js";
-import { identity, Kernel } from "../src/index.js";
+import { identity, Kernel, Space } from "../src/index.js";
 import { bigBudget } from "./fixtures/causal.js";
 import {
   announcement,
   bit,
   chainPlan,
+  crew,
   FAIR,
   heard,
   incidentPlan,
   incidentPriors,
+  modelA,
   PEOPLE,
+  priorsA,
   sharedCausePlan,
   status,
   BIT as CAUSAL_BIT,
@@ -220,5 +223,62 @@ describe("traversal budget and sources", () => {
       () => backwardSlice([key("x", 3)], [], lazyChain({ n: 0 }), bigBudget({ max_contexts: 1 })),
       /more input contexts than max_contexts 1/,
     );
+  });
+});
+
+describe("F05: slices keep typed sources", () => {
+  it("C7: a source-only target slices to a zero-writer plan that still answers it", () => {
+    const plan = modelA();
+    const target = bit("x", 0);
+    const full = exactQuery(plan, { target, initial: priorsA, budget }).distribution;
+    expect(full).toStrictEqual([0.5, 0.5]);
+    const s = sliceFromPlan(plan, [target], [], budget);
+    expect(s.plan.nodes).toHaveLength(0);
+    expect(s.roots).toStrictEqual([target]);
+    expect(s.plan.sources.map((d) => [d.key, d.space.name])).toStrictEqual([[target, CAUSAL_BIT.name]]);
+    // Before: "target ... is not a key of this plan".
+    expect(exactQuery(s.plan, { target, initial: priorsA, budget }).distribution).toStrictEqual(full);
+  });
+
+  it("C7: source-only evidence whose only reader is pruned stays in the slice", () => {
+    const model = branchModel();
+    const full = modelPlan(model);
+    const initial = priors(model);
+    const target = key("A2", 2);
+    const evidence: EvidencePair[] = [[key("Q", 0), "1"]];
+    const expected = exactQuery(full, { target, evidence, initial, budget }).distribution;
+    close(expected, [0.5485, 0.4515]);
+    const { producer } = producerOf(full);
+    const bySpace = (k: VariableKey) => (k[1] === "Q" ? BIT : undefined);
+    for (const s of [sliceFromPlan(full, [target], evidence, budget), backwardSlice([target], evidence, producer, budget, { sourceSpace: bySpace })]) {
+      // C1, the only reader of Q, is not an ancestor of the query.
+      expect([...outputs(s.plan)].sort()).toStrictEqual(["A1", "A2"]);
+      expect(s.plan.sources.map((d) => d.key[1])).toStrictEqual(["Q", "Z"]);
+      // Before: "evidence[0]: ... is not a key of this plan".
+      expect(exactQuery(s.plan, { target, evidence, initial, budget }).distribution).toStrictEqual(expected);
+    }
+    // A lazy producer cannot type an isolated root on its own.
+    raises(() => backwardSlice([target], evidence, producer, budget), /source .*"Q".* has no reader in the slice/);
+    raises(
+      () => backwardSlice([target], evidence, producer, budget, { sourceSpace: () => new Space("Other", ["0", "1"]) }),
+      /declared 'Other' but read as 'Bit'/,
+    );
+    // The typed sources are part of the slice's model hash.
+    const a = sliceFromPlan(full, [target], [], budget);
+    const b = sliceFromPlan(full, [target], evidence, budget);
+    expect(a.plan.graph_hash).toBe(b.plan.graph_hash);
+    expect(a.plan.model_hash).not.toBe(b.plan.model_hash);
+  });
+
+  it("an exogenous source of a compiled plan is queryable on a slice whose writers are all pruned", () => {
+    const incident = incidentPlan(2);
+    const s = sliceFromPlan(incident, [crew(0)], [[status(1), "acknowledged"]], budget);
+    close(
+      exactQuery(s.plan, { target: crew(0), evidence: [[status(1), "acknowledged"]], initial: incidentPriors(2, [0.5, 0.5]), budget }).distribution,
+      exactQuery(incident, { target: crew(0), evidence: [[status(1), "acknowledged"]], initial: incidentPriors(2, [0.5, 0.5]), budget }).distribution,
+    );
+    const lonely = sliceFromPlan(incident, [crew(1)], [], budget);
+    expect(lonely.plan.nodes).toHaveLength(0);
+    expect(exactQuery(lonely.plan, { target: crew(1), initial: incidentPriors(2, [0.25, 0.75]), budget }).distribution).toStrictEqual([0.25, 0.75]);
   });
 });

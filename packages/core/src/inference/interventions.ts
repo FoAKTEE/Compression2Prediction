@@ -5,8 +5,9 @@
  * A window is active for output time_index t with start_step <= t <
  * end_step_exclusive (guide §11.1). Surgery returns a new Plan: replaced
  * writers get new nodes, every other node is the same object, and the model
- * hash covers the base hash and the canonical intervention set. The input plan
- * is never mutated.
+ * hash covers the base hash and the canonical intervention set. Source
+ * declarations carry over, minus the sources a hard assignment now writes.
+ * The input plan is never mutated.
  */
 import { Plan, PlanNode } from "../causal/compiler.js";
 import { FamilyKey } from "../causal/family.js";
@@ -277,7 +278,11 @@ function hard(s: Surgery, iv: HardIntervention, i: number, ihash: string): void 
     claim(s, k, i);
     const w = s.idx.writers.get(k);
     // FamilyKey needs a kind: taken from the replaced writer, or for a source from its first reader.
-    const ref = s.idx.plan.nodes[w ?? s.idx.readers.get(k)![0]!]!;
+    const at = w ?? s.idx.readers.get(k)?.[0];
+    if (at === undefined) {
+      throw new ValueError(`${where}: ${k} is a declared source that no mechanism reads; there is nothing to replace`);
+    }
+    const ref = s.idx.plan.nodes[at]!;
     const kernel = constant(UNIT, space, iv.value);
     const node = new PlanNode({
       mechanism_id: `do(${iv.target_variable}=${iv.value})`,
@@ -433,5 +438,8 @@ export function applyInterventions(plan: Plan, interventions: readonly Intervent
     graph_hash,
     interventions: [...described].sort((a, b) => compareCodePoints(canonicalJson(a), canonicalJson(b))),
   });
-  return new Plan({ nodes, graph_hash, model_hash });
+  // A clamped source is written now, so it is no longer a source; base_model_hash covers the rest.
+  const written = new Set(added.map((n) => variableKeyString(n.output)));
+  const sources = idx.plan.sources.filter((d) => !written.has(variableKeyString(d.key)));
+  return new Plan({ nodes, graph_hash, model_hash, sources });
 }

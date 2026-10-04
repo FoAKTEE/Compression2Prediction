@@ -1,7 +1,7 @@
 /** N5.2: finite Bayes filter and horizon forecasts (guide §6.2). */
 import { describe, expect, it } from "vitest";
 import { filterSequence, horizonForecast, predict, update } from "../src/inference/index.js";
-import { identity, Kernel, Space } from "../src/index.js";
+import { identity, Kernel, posterior, Space } from "../src/index.js";
 import { INCIDENT_STATUS, P_BASELINE, P_EXTRA_CREW } from "./fixtures/inference.js";
 import { raises } from "./support.js";
 
@@ -97,5 +97,48 @@ describe("horizon forecasts", () => {
     raises(() => horizonForecast([1, 0], [T_BASE]), /wrong size/);
     raises(() => horizonForecast([1, 0, 0], [T_BASE], identity(REPORT)), /step 1: 'Report' does not accept 'IncidentStatus'/);
     raises(() => horizonForecast([1, 0, 0], "T" as never), /transitions: expected an array/);
+  });
+});
+
+describe("F04: underflow-safe updates", () => {
+  const BIT = new Space("Bit", ["0", "1"]);
+  const MIN = Number.MIN_VALUE;
+  // P(o = 1 | s) = MIN, 2 MIN: representable, but 0.5 * MIN rounds to 0.
+  const TINY = new Kernel(BIT, BIT, [
+    [1, MIN],
+    [1, 2 * MIN],
+  ]);
+
+  it("B3: update keeps the likelihood ratio of subnormal likelihoods: [1/3, 2/3], not [0, 1]", () => {
+    close(update([0.5, 0.5], TINY, "1"), [1 / 3, 2 / 3]);
+    close(posterior([0.5, 0.5], TINY, "1"), [1 / 3, 2 / 3]);
+    // A structural zero stays zero; only true zero evidence raises.
+    const strict = new Kernel(BIT, BIT, [
+      [1, 0],
+      [1, 2 * MIN],
+    ]);
+    expect(update([0.5, 0.5], strict, "1")).toStrictEqual([0, 1]);
+    raises(() => update([1, 0], strict, "1"), /Observation has zero probability under this model/);
+  });
+
+  it("filterSequence carries the belief in log space once a step would underflow", () => {
+    // Identity transition: after two '1' observations the posterior is ∝ (MIN^2, 4 MIN^2).
+    const steps = filterSequence([0.5, 0.5], identity(BIT), TINY, ["1", "1"]);
+    close(steps[0]!.filtered, [1 / 3, 2 / 3]);
+    close(steps[1]!.predicted, [1 / 3, 2 / 3]);
+    close(steps[1]!.filtered, [1 / 5, 4 / 5]);
+    // An ordinary step before the switch is unchanged; a later impossible observation still raises.
+    const mixed = filterSequence([0.5, 0.5], identity(BIT), TINY, ["0", "1", "1"]);
+    close(mixed[0]!.filtered, [0.5, 0.5]);
+    close(mixed[2]!.filtered, [1 / 5, 4 / 5]);
+    // 'b' is possible only from state 0 (likelihood MIN); after it, 'c' (state 1 only) has zero evidence.
+    const OBS = new Space("Obs", ["a", "b", "c"]);
+    const strict = new Kernel(BIT, OBS, [
+      [1, MIN, 0],
+      [0.5, 0, 0.5],
+    ]);
+    close(filterSequence([0.5, 0.5], identity(BIT), strict, ["b"])[0]!.filtered, [1, 0]);
+    raises(() => filterSequence([0.5, 0.5], identity(BIT), strict, ["b", "c"]), /observation 1 \('c'\): Observation has zero probability/);
+    raises(() => filterSequence([0.5, 0.5], identity(BIT), TINY, ["1", "2"]), /observation 1 \('2'\): Observation is outside the emission support/);
   });
 });

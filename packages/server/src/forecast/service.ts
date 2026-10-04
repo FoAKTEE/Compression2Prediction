@@ -7,7 +7,7 @@
  * published last; a report is created for it, and both rows are recorded.
  */
 import { randomBytes } from "node:crypto";
-import { applyInterventions, contentHash, describeIntervention, runQuery, ValueError, VERSION, variableKeyString } from "@c2p/core";
+import { applyInterventions, contentHash, describeIntervention, initialLawHash, runQuery, ValueError, VERSION, variableKeyString } from "@c2p/core";
 import type { HardIntervention, Origin, Plan, Prior, QueryResult, Space, VariableKey } from "@c2p/core";
 import { as422, HttpError, notImplemented, unprocessable } from "../api/errors.js";
 import type { AppContext } from "../context.js";
@@ -48,11 +48,17 @@ function planKeys(plan: Plan): Map<string, KeyInfo> {
     const k = variableKeyString(key);
     if (!keys.has(k)) keys.set(k, { key, space });
   };
+  for (const d of plan.sources) add(d.key, d.space);
   for (const node of plan.nodes) {
     node.inputs.forEach((key, i) => add(key, node.input_spaces[i]!));
     add(node.output, node.output_space);
   }
   return keys;
+}
+
+/** The model's initial priors as core priors (the run's initial law). */
+function initialPriors(c: CompiledPlan): Prior[] {
+  return c.model.model.initial.map((p) => [p.key, p.distribution] as const);
 }
 
 /** One value if all agree, else `mixed`. */
@@ -169,7 +175,7 @@ interface Queried {
 
 /** Exact per-step queries: baseline always, the intervened model when interventions are given. */
 function runQueries(c: CompiledPlan, ctx: AppContext, keys: readonly VariableKey[], core: readonly HardIntervention[], intervened: Plan | null): Queried {
-  const initial: Prior[] = c.model.model.initial.map((p) => [p.key, p.distribution] as const);
+  const initial = initialPriors(c);
   const budget = budgetFrom(ctx.config.bounds);
   const steps = as422("invalid_query", () =>
     keys.map((target) => ({
@@ -256,6 +262,8 @@ interface RunContext {
   readonly interventions: Intervention[];
   readonly core: HardIntervention[];
   readonly intervenedHash: string | null;
+  /** Hash of the initial law; `model_hash` does not cover priors (D23). */
+  readonly initialLawHash: string;
   readonly baseline: ScenarioResult;
   readonly intervention: ScenarioResult | null;
   readonly kernels: KernelProvenance[];
@@ -350,6 +358,7 @@ function writeRun(ctx: AppContext, r: RunContext, repoSha: string): string {
     request: req,
     prediction_scope: r.scope,
     initial: c.model.model.initial.map((p) => ({ key: keyJson(p.key), distribution: [...p.distribution] })),
+    initial_law_hash: r.initialLawHash,
     world_version: c.worldVersion,
     model_version: c.modelVersion,
     plan_version: c.planVersion,
@@ -421,6 +430,7 @@ export function executeForecast(ctx: AppContext, project: ProjectState, req: For
   const core = interventions.map(toCore);
   const intervened = core.length > 0 ? surgery(c.plan, core) : null;
   const queried = runQueries(c, ctx, target.keys, core, intervened);
+  const lawHash = as422("invalid_query", () => initialLawHash(initialPriors(c)));
 
   const kernels = kernelProvenance(c);
   const validationStatus = common(kernels.map((k) => k.validation_status));
@@ -440,6 +450,7 @@ export function executeForecast(ctx: AppContext, project: ProjectState, req: For
     interventions,
     core,
     intervenedHash: intervened?.model_hash ?? null,
+    initialLawHash: lawHash,
     baseline: { scenario_id: base, ...queried.baseline },
     intervention: queried.intervention === null ? null : { scenario_id: scenario, ...queried.intervention },
     kernels,

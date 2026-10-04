@@ -6,14 +6,18 @@
  * backward slice of the target (final horizon step):
  * - reverse personalized PageRank seeded at the target (unit weights);
  * - exact coefficients c_ij from each writer's rows, read back exactly from
- *   their decimal literals, and path bounds w_j to the target;
- * - one single-node certificate per key (defect 1: any constant replacement).
+ *   their decimal literals, and path bounds w_j to the target, with the
+ *   allowance for the executed float kernels (D23);
+ * - one single-node certificate per key with an unknown constant replacement
+ *   (local defect 1), scoped to the model's initial law, the replayed
+ *   interventions, the horizon, and no conditioning.
  * Scores order work only: kernels are hashed before and after and must match.
  */
 import {
   applyInterventions,
   boundsArtifact,
   canonicalJson,
+  certificateScope,
   certifyRemovals,
   compareCodePoints,
   kernelHashes,
@@ -30,7 +34,17 @@ import {
   ValueError,
   variableKeyString,
 } from "@c2p/core";
-import type { Coefficients, EnvelopeFields, Plan, PlanNode, Seed, TargetBounds, VariableKey } from "@c2p/core";
+import type {
+  CertificateScope,
+  CertificateScopeInput,
+  Coefficients,
+  EnvelopeFields,
+  Plan,
+  PlanNode,
+  Seed,
+  TargetBounds,
+  VariableKey,
+} from "@c2p/core";
 import { integrity } from "../api/common.js";
 import { as422, conflict, HttpError, unprocessable } from "../api/errors.js";
 import type { AppContext } from "../context.js";
@@ -50,6 +64,11 @@ export const RANK_NOTE = "Scores order computation and review only; they are not
 const integrityError = (message: string) => new HttpError(500, "integrity_error", message);
 
 type StoredRun = ForecastRun & Partial<ForecastResult>;
+
+/** The D22 response plus the certificates' hashed scope (D23); null when the run is conditioned and nothing is certified. */
+export interface RankResponse extends RankDiagnosticsResponse {
+  certificate_scope: CertificateScope | null;
+}
 
 /** The recorded plan references; a bare run row cannot be ranked. */
 function planRefs(run: StoredRun) {
@@ -132,8 +151,19 @@ function influence(ctx: AppContext, plan: Plan, slice: Plan, target: VariableKey
   return { bounds, tainted };
 }
 
+/** A refused tolerance (at or below the float allowance) is not certified; any other failure is a server fault. */
+function accepted(certify: () => { readonly accepted: boolean }): boolean {
+  try {
+    return certify().accepted;
+  } catch (err) {
+    if (err instanceof ValueError && /numerical allowance/.test(err.message)) return false;
+    if (err instanceof ValueError) throw integrityError(err.message);
+    throw err;
+  }
+}
+
 /** Rank diagnostics for `run` (already checked to belong to its project). */
-export function rankRun(ctx: AppContext, run: ForecastRun, scenario: RankScenario): RankDiagnosticsResponse {
+export function rankRun(ctx: AppContext, run: ForecastRun, scenario: RankScenario): RankResponse {
   const stored = run as StoredRun;
   const refs = planRefs(stored);
   if (scenario === "intervention" && (stored.intervened_model_hash == null || run.interventions.length === 0)) {
@@ -143,7 +173,8 @@ export function rankRun(ctx: AppContext, run: ForecastRun, scenario: RankScenari
   const plan = rankedPlan(c, stored, scenario);
   const target: VariableKey = [c.payload.scenario_id, run.target_variable, run.target_entity_id, run.horizon_steps];
   const t = variableKeyString(target);
-  if (!plan.nodes.some((n) => variableKeyString(n.output) === t || n.inputs.some((k) => variableKeyString(k) === t))) {
+  const isKey = (k: VariableKey) => variableKeyString(k) === t;
+  if (!plan.sources.some((d) => isKey(d.key)) && !plan.nodes.some((n) => isKey(n.output) || n.inputs.some(isKey))) {
     throw integrityError(`run ${run.run_id}: target ${t} is not a key of its plan`);
   }
   const before = canonicalJson(kernelHashes(plan).map((p) => [...p]));
@@ -189,12 +220,20 @@ export function rankRun(ctx: AppContext, run: ForecastRun, scenario: RankScenari
   const eps = Rational.parse(String(ctx.config.rank.pruneEpsTv));
   // Certificates cover unconditioned queries only; forecast runs condition on nothing.
   const evidencePresent = stored.prediction_scope?.conditioning !== "none";
+  const scopeInput: CertificateScopeInput = {
+    initial: c.model.model.initial.map((p) => [p.key, p.distribution] as const),
+    interventions: scenario === "intervention" ? run.interventions.map(toCore) : [],
+    horizon: c.payload.horizon_steps,
+    conditioning: "none",
+  };
+  const scope = evidencePresent ? null : integrity(() => certificateScope(scopeInput));
   const prunable = new Map<string, boolean>();
   const certified = (key: VariableKey): boolean => {
     const k = variableKeyString(key);
     let ok = prunable.get(k);
     if (ok === undefined) {
-      ok = !evidencePresent && certifyRemovals(bounds, [[key, Rational.ONE]], eps, { evidencePresent: false }).accepted;
+      // Model-free: an unknown constant replacement (local defect 1), never a guessed one.
+      ok = scope !== null && accepted(() => certifyRemovals(bounds, { replacements: [[key, null]], scope: scopeInput }, eps));
       prunable.set(k, ok);
     }
     return ok;
@@ -235,5 +274,6 @@ export function rankRun(ctx: AppContext, run: ForecastRun, scenario: RankScenari
     score_artifact_hash: scores.meta.content_hash,
     bounds_hash: boundsHash,
     note: RANK_NOTE,
+    certificate_scope: scope,
   };
 }

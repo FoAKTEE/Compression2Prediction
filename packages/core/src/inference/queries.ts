@@ -8,7 +8,7 @@ import type { VariableKey } from "../causal/hypergraph.js";
 import { ValueError } from "../errors.js";
 import { asLiteral, isPlainObject, requireFields } from "../store/records.js";
 import { repr } from "../store/repr.js";
-import { exactQuery, QUERY_KINDS } from "./exact.js";
+import { exactQuery, initialLawHash, QUERY_KINDS } from "./exact.js";
 import type { EvidencePair, ExactResult, Prior, QueryKind } from "./exact.js";
 import { applyInterventions } from "./interventions.js";
 import type { Intervention } from "./interventions.js";
@@ -28,6 +28,8 @@ export interface QueryRequest {
 export interface QueryResult extends ExactResult {
   /** Hash of the plan actually queried (the intervened plan for interventional queries). */
   readonly model_hash: string;
+  /** Hash of the priors used; ``model_hash`` does not cover them. */
+  readonly initial_law_hash: string;
 }
 
 const REQUIRED = Object.freeze(["query_kind", "target", "initial", "budget"]);
@@ -83,5 +85,6 @@ export function runQuery(plan: Plan, request: QueryRequest): QueryResult {
     query_kind: kind,
     effect_status: kind === "interventional" ? "model_based_intervention" : "not_applicable",
     model_hash: queried.model_hash,
+    initial_law_hash: initialLawHash(o.initial as readonly Prior[]),
   });
 }

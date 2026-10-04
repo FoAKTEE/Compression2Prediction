@@ -53,6 +53,7 @@ import {
   uniformKernel,
   variable,
 } from "./fixtures/causal.js";
+import { applyInterventions, exactQuery } from "../src/inference/index.js";
 import { raises } from "./support.js";
 
 const productSpy = vi.mocked(kernels.product);
@@ -462,5 +463,56 @@ describe("budgets", () => {
     raises(() => bigBudget({ max_contexts: 1.5 }), /max_contexts: expected an integer/);
     raises(() => bigBudget({ max_particles: "10" as never }), /max_particles/);
     expect(Object.isFrozen(bigBudget())).toBe(true);
+  });
+});
+
+describe("typed sources (F05)", () => {
+  const STATUS5 = key("incident_status", INCIDENT, 5);
+
+  it("compilePlan declares every source with its Space: declared ones (even unread) and unwritten exogenous reads", () => {
+    const plan = compileIncident();
+    expect(plan.sources.map((d) => [variableKeyString(d.key), d.space.name])).toStrictEqual([
+      [variableKeyString(key("crew_capacity", "ent_crew_1", 0)), "CrewCapacity"],
+      [variableKeyString(key("crew_capacity", "ent_crew_1", 1)), "CrewCapacity"],
+      [variableKeyString(STATUS0), "IncidentStatus"],
+      [variableKeyString(key("supply_status", "ent_crew_1", 0)), "SupplyStatus"],
+      [variableKeyString(key("supply_status", "ent_crew_1", 1)), "SupplyStatus"],
+    ]);
+    expect(Object.isFrozen(plan.sources) && plan.sources.every((d) => Object.isFrozen(d))).toBe(true);
+    // A declared source nobody reads is still a typed, queryable key.
+    const empty = compilePlan([], incidentOptions());
+    expect(empty.sources.map((d) => [d.key, d.space])).toStrictEqual([[STATUS0, INCIDENT_STATUS]]);
+    const prior = [0.2, 0.3, 0.5];
+    expect(exactQuery(empty, { target: STATUS0, initial: [[STATUS0, prior]], budget: bigBudget() }).distribution).toStrictEqual(prior);
+    // Sources are hashed into model_hash, not graph_hash (the instance hypergraph).
+    const extra = compileIncident({ sources: [STATUS0, STATUS5] });
+    expect(extra.sources.map((d) => d.key)).toContainEqual(STATUS5);
+    expect(extra.graph_hash).toBe(plan.graph_hash);
+    expect(extra.model_hash).not.toBe(plan.model_hash);
+  });
+
+  it("Plan validates its sources; a node may not write a declared source", () => {
+    const plan = compileIncident();
+    const fields = { nodes: [], graph_hash: plan.graph_hash, model_hash: plan.model_hash };
+    raises(() => new Plan({ ...fields, sources: [{ key: STATUS0, space: INCIDENT_STATUS }, { key: STATUS0, space: INCIDENT_STATUS }] }), /duplicate source/);
+    raises(() => new Plan({ ...fields, sources: [{ key: STATUS0, space: "IncidentStatus" as never }] }), /expected a Space/);
+    raises(() => new Plan({ ...fields, sources: "none" as never }), /expected an array/);
+    expect(new Plan(fields).sources).toStrictEqual([]);
+    const writesSource = new Plan({ ...fields, nodes: plan.nodes, sources: [{ key: plan.nodes[0]!.output, space: INCIDENT_STATUS }] });
+    raises(() => exactQuery(writesSource, { target: STATUS0, initial: [], budget: bigBudget() }), /writes declared source/);
+    const mistyped = new Plan({ ...fields, nodes: plan.nodes, sources: [{ key: STATUS0, space: CREW_CAPACITY }] });
+    raises(() => exactQuery(mistyped, { target: STATUS0, initial: [], budget: bigBudget() }), /typed 'IncidentStatus' here but 'CrewCapacity' elsewhere/);
+  });
+
+  it("surgery keeps the declarations, minus sources a hard assignment now writes; an unread source cannot be clamped", () => {
+    const plan = compileIncident({ sources: [STATUS0, STATUS5] });
+    const crewHigh = { kind: "hard" as const, target_variable: "crew_capacity", entity_id: "ent_crew_1", value: "extra", start_step: 0, end_step_exclusive: 1 };
+    const cut = applyInterventions(plan, [crewHigh]);
+    const names = (p: Plan) => p.sources.map((d) => variableKeyString(d.key));
+    expect(names(cut)).toStrictEqual(names(plan).filter((k) => k !== variableKeyString(key("crew_capacity", "ent_crew_1", 0))));
+    raises(
+      () => applyInterventions(plan, [{ ...crewHigh, target_variable: "incident_status", entity_id: INCIDENT, value: "resolved", start_step: 5, end_step_exclusive: 6 }]),
+      /declared source that no mechanism reads/,
+    );
   });
 });

@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest";
 import { exactJoint, exactQuery } from "../src/inference/index.js";
 import type { Prior } from "../src/inference/index.js";
-import { copy, identity, Kernel, spaceEquals } from "../src/index.js";
+import { copy, identity, Kernel, Rational, spaceEquals } from "../src/index.js";
 import { bigBudget } from "./fixtures/causal.js";
 import {
   announcement,
@@ -22,6 +22,8 @@ import {
   status,
   supplies,
 } from "./fixtures/inference.js";
+import { bern, key, modelPlan, priors, R, ZERO } from "./fixtures/rank.js";
+import type { ExactModel } from "./fixtures/rank.js";
 import { raises } from "./support.js";
 
 const budget = bigBudget();
@@ -222,5 +224,53 @@ describe("budgets and validation", () => {
     raises(() => exactQuery({ nodes: [] } as never, { target: status(2), initial, budget }), /expected a compiled Plan/);
     raises(() => exactJoint(plan, { targets: [status(1), status(1)], initial, budget }), /duplicate keys/);
     raises(() => exactJoint(plan, { targets: [], initial, budget }), /nonempty array/);
+  });
+});
+
+describe("F04: underflow-safe likelihoods", () => {
+  /** X fair; E1, E2 read X with P(E = 1 | x) = rows[x]. */
+  const emissions = (rows: readonly (readonly [Rational, Rational])[]): ExactModel => ({
+    roots: [{ name: "X", tick: 0, prior: bern(R(1, 2)) }],
+    writers: rows.map((r, i) => ({ name: `E${i + 1}`, tick: 1, inputs: [["X", 0] as const], rows: [bern(r[0]), bern(r[1])] })),
+  });
+  const a = Rational.parse("2e-162");
+  const b = a.mul(R(2));
+
+  it("C6: two tiny positive emissions keep their ratio: [1/5, 4/5], not [0, 1]", () => {
+    const model = emissions([
+      [a, b],
+      [a, b],
+    ]);
+    const plan = modelPlan(model);
+    const evidence = [[key("E1", 1), "1"] as const, [key("E2", 1), "1"] as const];
+    const got = exactQuery(plan, { target: key("X", 0), initial: priors(model), evidence, budget }).distribution;
+    // Each product 2^-1 * 2e-162 * 2e-162 is below the double range; the ratio a^2 : b^2 is not.
+    close(got, [1 / 5, 4 / 5]);
+    const joint = exactJoint(plan, { targets: [key("X", 0), key("E1", 1)], initial: priors(model), evidence: evidence.slice(1), budget }).distribution;
+    expect(joint.reduce((s, p) => s + p, 0)).toBeCloseTo(1, 12);
+    // P(X = x, E1 = 1 | E2 = 1) ∝ row_x^2: the tiny joint cells keep the ratio a^2 : b^2.
+    expect(joint[1]! / joint[3]!).toBeCloseTo(1 / 4, 12);
+  });
+
+  it("keeps structural zeros and raises only for true zero evidence", () => {
+    // X = 0 cannot emit E1 = 1; X = 1 emits both with tiny positive likelihoods.
+    const model = emissions([
+      [ZERO, a],
+      [b, a],
+    ]);
+    const plan = modelPlan(model);
+    const evidence = [[key("E1", 1), "1"] as const, [key("E2", 1), "1"] as const];
+    expect(exactQuery(plan, { target: key("X", 0), initial: priors(model), evidence, budget }).distribution).toStrictEqual([0, 1]);
+    const impossible = emissions([[ZERO, ZERO], [a, b]]);
+    raises(
+      () =>
+        exactQuery(modelPlan(impossible), {
+          target: key("X", 0),
+          initial: priors(impossible),
+          evidence: [[key("E1", 1), "1"], [key("E2", 1), "1"]],
+          budget,
+        }),
+      /the evidence has zero probability under this model; it is not repaired/,
+    );
   });
 });
