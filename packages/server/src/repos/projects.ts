@@ -2,6 +2,8 @@
  * Mutable project state (name, question, status, files, current world/model
  * versions). Uploaded bytes go to the content-addressed `UploadStore`; worlds
  * and models are immutable artifacts whose content hashes are recorded here.
+ * `plan_version`, `last_compile_ok`, and the latest run/report are derived
+ * from their own tables when a project is read.
  */
 import type { DatabaseSync } from "node:sqlite";
 import { newId } from "../ids.js";
@@ -20,10 +22,8 @@ export interface NewProject {
   readonly files: readonly NewFile[];
 }
 
-/** Internal row; `model_version` is not part of the wire `Project`. */
-export interface ProjectState extends Project {
-  model_version: string | null;
-}
+/** A project as read from state; the same shape as the wire `Project`. */
+export type ProjectState = Project;
 
 export type CasResult = { readonly ok: true; readonly project: ProjectState } | { readonly ok: false; readonly current: string | null };
 
@@ -40,6 +40,16 @@ export const MODEL_WRITABLE: readonly ProjectStatus[] = Object.freeze(["world_re
 
 type Row = Record<string, unknown>;
 
+const optStr = (v: unknown): string | null => (v === null || v === undefined ? null : String(v));
+
+/** A project row plus the derived columns `summary` reads. */
+const SELECT_PROJECT = `SELECT p.*,
+  (SELECT mp.plan_version FROM model_plans mp WHERE mp.project_id = p.project_id AND mp.model_version = p.model_version) AS plan_version,
+  (SELECT mc.ok FROM model_compiles mc WHERE mc.project_id = p.project_id AND mc.model_version = p.model_version) AS last_compile_ok,
+  (SELECT r.run_id FROM forecast_runs r WHERE r.project_id = p.project_id ORDER BY r.created_at DESC, r.rowid DESC LIMIT 1) AS latest_run_id,
+  (SELECT rp.report_id FROM reports rp WHERE rp.project_id = p.project_id ORDER BY rp.created_at DESC, rp.rowid DESC LIMIT 1) AS latest_report_id
+  FROM projects p`;
+
 function summary(row: Row): ProjectSummary {
   return {
     project_id: String(row.project_id),
@@ -48,10 +58,14 @@ function summary(row: Row): ProjectSummary {
     status: String(row.status) as ProjectStatus,
     created_at: String(row.created_at),
     updated_at: String(row.updated_at),
+    world_version: optStr(row.world_version),
+    model_version: optStr(row.model_version),
+    plan_version: optStr(row.plan_version),
+    last_compile_ok: row.last_compile_ok === null || row.last_compile_ok === undefined ? null : Number(row.last_compile_ok) === 1,
+    latest_run_id: optStr(row.latest_run_id),
+    latest_report_id: optStr(row.latest_report_id),
   };
 }
-
-const optStr = (v: unknown): string | null => (v === null || v === undefined ? null : String(v));
 
 const UNDO_EXTRACTING =
   "UPDATE projects SET status = CASE WHEN world_version IS NULL THEN 'failed' WHEN model_version IS NULL THEN 'world_ready' ELSE 'model_ready' END, updated_at = ?";
@@ -83,18 +97,13 @@ export class ProjectRepo {
 
   /** Newest first. */
   list(): ProjectSummary[] {
-    return this.db.prepare("SELECT * FROM projects ORDER BY created_at DESC, rowid DESC").all().map(summary);
+    return this.db.prepare(`${SELECT_PROJECT} ORDER BY p.created_at DESC, p.rowid DESC`).all().map(summary);
   }
 
   get(projectId: string): ProjectState | null {
-    const row = this.db.prepare("SELECT * FROM projects WHERE project_id = ?").get(projectId);
+    const row = this.db.prepare(`${SELECT_PROJECT} WHERE p.project_id = ?`).get(projectId);
     if (row === undefined) return null;
-    return {
-      ...summary(row),
-      files: this.files(projectId),
-      world_version: optStr(row.world_version),
-      model_version: optStr(row.model_version),
-    };
+    return { ...summary(row), files: this.files(projectId) };
   }
 
   files(projectId: string): ProjectFile[] {
@@ -123,22 +132,31 @@ export class ProjectRepo {
   }
 
   /**
-   * Point the project at a new world version (compare-and-set when `expected`
-   * is given; `null` expects no world yet). A new world clears the model.
+   * Point the project at a world version (compare-and-set when `expected` is
+   * given; `null` expects no world yet). A new version clears the model and
+   * every plan and compile outcome of the project, and the status becomes
+   * `world_ready` (D21); runs and reports are kept. The same version changes
+   * nothing, except that it ends an extraction.
    */
   setWorld(projectId: string, version: string, expected: string | null | undefined, from: readonly ProjectStatus[]): CasResult {
     return transaction(this.db, () => {
-      const row = this.db.prepare("SELECT world_version, status FROM projects WHERE project_id = ?").get(projectId);
+      const row = this.db.prepare("SELECT world_version, model_version, status FROM projects WHERE project_id = ?").get(projectId);
       if (row === undefined) return { ok: false, current: null };
       const current = optStr(row.world_version);
       if (expected !== undefined && expected !== current) return { ok: false, current };
       if (!from.includes(String(row.status) as ProjectStatus)) return { ok: false, current };
-      const sameWorld = current === version;
-      this.db
-        .prepare(
-          `UPDATE projects SET world_version = ?, status = ?, updated_at = ?${sameWorld ? "" : ", model_version = NULL"} WHERE project_id = ?`,
-        )
-        .run(version, sameWorld && row.status === "model_ready" ? "model_ready" : "world_ready", nowIso(), projectId);
+      if (current === version) {
+        const status = optStr(row.model_version) === null ? "world_ready" : "model_ready";
+        if (row.status !== status) {
+          this.db.prepare("UPDATE projects SET status = ?, updated_at = ? WHERE project_id = ?").run(status, nowIso(), projectId);
+        }
+      } else {
+        this.db
+          .prepare("UPDATE projects SET world_version = ?, model_version = NULL, status = 'world_ready', updated_at = ? WHERE project_id = ?")
+          .run(version, nowIso(), projectId);
+        this.db.prepare("DELETE FROM model_plans WHERE project_id = ?").run(projectId);
+        this.db.prepare("DELETE FROM model_compiles WHERE project_id = ?").run(projectId);
+      }
       return { ok: true, project: this.get(projectId)! };
     });
   }
@@ -163,16 +181,28 @@ export class ProjectRepo {
     });
   }
 
-  /** Record the latest plan compiled from `modelVersion`, if the project still points at it. */
-  setPlan(projectId: string, modelVersion: string, planVersion: string): boolean {
+  /**
+   * Record a compile of `modelVersion`, if the project still points at it:
+   * its outcome, and on success (`planVersion` given) the latest plan. A
+   * failed compile keeps the previous plan, which forecasts still use.
+   */
+  recordCompile(projectId: string, modelVersion: string, planVersion: string | null): boolean {
     return transaction(this.db, () => {
       const row = this.db.prepare("SELECT model_version FROM projects WHERE project_id = ?").get(projectId);
       if (row === undefined || optStr(row.model_version) !== modelVersion) return false;
+      const now = nowIso();
+      if (planVersion !== null) {
+        this.db
+          .prepare(
+            "INSERT INTO model_plans (project_id, model_version, plan_version, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT (project_id, model_version) DO UPDATE SET plan_version = excluded.plan_version, updated_at = excluded.updated_at",
+          )
+          .run(projectId, modelVersion, planVersion, now);
+      }
       this.db
         .prepare(
-          "INSERT INTO model_plans (project_id, model_version, plan_version, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT (project_id, model_version) DO UPDATE SET plan_version = excluded.plan_version, updated_at = excluded.updated_at",
+          "INSERT INTO model_compiles (project_id, model_version, ok, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT (project_id, model_version) DO UPDATE SET ok = excluded.ok, updated_at = excluded.updated_at",
         )
-        .run(projectId, modelVersion, planVersion, nowIso());
+        .run(projectId, modelVersion, planVersion === null ? 0 : 1, now);
       return true;
     });
   }
@@ -197,7 +227,7 @@ export class ProjectRepo {
   }
 }
 
-/** The wire `Project` (drops internal fields). */
+/** The wire `Project`. */
 export function projectJson(p: ProjectState): Project {
   return {
     project_id: p.project_id,
@@ -206,7 +236,12 @@ export function projectJson(p: ProjectState): Project {
     status: p.status,
     created_at: p.created_at,
     updated_at: p.updated_at,
-    files: p.files,
     world_version: p.world_version,
+    model_version: p.model_version,
+    plan_version: p.plan_version,
+    last_compile_ok: p.last_compile_ok,
+    latest_run_id: p.latest_run_id,
+    latest_report_id: p.latest_report_id,
+    files: p.files,
   };
 }

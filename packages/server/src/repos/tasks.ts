@@ -42,6 +42,15 @@ function checkProgress(progress: number | null): number | null {
   return progress;
 }
 
+/** Task kind syntax, shared by creation and listing filters. */
+export const TASK_KIND = /^[a-z][a-z0-9_]{0,63}$/;
+
+export interface TaskFilter {
+  readonly kind?: string;
+  /** Any of these statuses; all when absent. */
+  readonly statuses?: readonly TaskStatus[];
+}
+
 export interface NewTask {
   readonly kind: string;
   readonly project_id: string | null;
@@ -52,7 +61,7 @@ export class TaskRepo {
   constructor(private readonly db: DatabaseSync) {}
 
   create(input: NewTask): Task {
-    if (typeof input.kind !== "string" || !/^[a-z][a-z0-9_]{0,63}$/.test(input.kind)) {
+    if (typeof input.kind !== "string" || !TASK_KIND.test(input.kind)) {
       throw new ValueError(`task kind: invalid ${JSON.stringify(input.kind)}`);
     }
     const id = newId("task");
@@ -74,6 +83,24 @@ export class TaskRepo {
     const row = this.db.prepare("SELECT input FROM tasks WHERE task_id = ?").get(taskId);
     if (row === undefined) throw new ValueError(`unknown task ${taskId}`);
     return JSON.parse(String(row.input));
+  }
+
+  /** The project's tasks matching `filter`, newest first, at most `limit`. */
+  list(projectId: string, filter: TaskFilter, limit: number): Task[] {
+    const where = ["project_id = ?"];
+    const args: (string | number)[] = [projectId];
+    if (filter.kind !== undefined) {
+      where.push("kind = ?");
+      args.push(filter.kind);
+    }
+    if (filter.statuses !== undefined && filter.statuses.length > 0) {
+      where.push(`status IN (${filter.statuses.map(() => "?").join(", ")})`);
+      args.push(...filter.statuses);
+    }
+    return this.db
+      .prepare(`SELECT * FROM tasks WHERE ${where.join(" AND ")} ORDER BY created_at DESC, rowid DESC LIMIT ?`)
+      .all(...args, limit)
+      .map(taskOf);
   }
 
   /** A non-terminal task of `kind` for the project, if any. */

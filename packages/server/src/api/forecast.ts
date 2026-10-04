@@ -12,7 +12,7 @@ import { repoSha } from "../forecast/repoSha.js";
 import { executeForecast } from "../forecast/service.js";
 import type { ForecastResult } from "../forecast/types.js";
 import { nameParam } from "../ids.js";
-import type { ForecastRequest, Intervention, InterventionKind, QueryKind } from "../wire.js";
+import type { ForecastRequest, Intervention, InterventionKind, ListRunsResponse, QueryKind } from "../wire.js";
 import { requireProject } from "./common.js";
 import type { ProjectParams } from "./common.js";
 import { notFound, notImplemented, unprocessable } from "./errors.js";
@@ -176,7 +176,7 @@ export function registerForecastRoutes(app: FastifyInstance, ctx: AppContext): v
     },
   );
 
-  app.get<{ Params: ProjectParams }>("/api/forecast/projects/:projectId/runs", async (req) => {
+  app.get<{ Params: ProjectParams }>("/api/forecast/projects/:projectId/runs", async (req): Promise<ListRunsResponse> => {
     const project = requireProject(ctx, req.params.projectId);
     return { runs: ctx.runs.list(project.project_id) };
   });
@@ -189,6 +189,7 @@ export function registerForecastRoutes(app: FastifyInstance, ctx: AppContext): v
     return run;
   };
 
+  // The stored response, exactly as POST returned it.
   app.get<{ Params: RunParams }>("/api/forecast/projects/:projectId/runs/:runId", async (req) =>
     requireRun(req.params.projectId, req.params.runId),
   );

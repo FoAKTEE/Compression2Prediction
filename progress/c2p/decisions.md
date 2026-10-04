@@ -587,3 +587,59 @@ say so explicitly and never rewrite history.
   check reads the top-level `scenario_id`).
 - next: a core follow-up may add an `unknown` activity status valid only with
   `missing`. An API route will consume this module.
+
+## D21 — A world change invalidates the model; history listings and the frontend contract for steps 3–5
+
+- date: 2026-10-04
+- decision:
+  - A `PUT .../world` (or a finished extraction) with a new world version
+    clears the project's `model_version` and deletes its `model_plans` and
+    `model_compiles` rows in the same transaction, and the status becomes
+    `world_ready`. A model is bound to a world version (D18), so nothing
+    compiled from the old world stays current. Re-importing the old world
+    later needs a fresh model import and compile. Runs and reports are
+    immutable history: they are kept, listed, and readable. The same
+    world version changes nothing (not even `updated_at`). Its only effect
+    is to end an extraction, with the status following whether a model exists.
+  - Project wire shape: GET and list items carry `world_version`,
+    `model_version`, `plan_version`, `last_compile_ok`, `latest_run_id`,
+    and `latest_report_id`. These are derived from their tables when the
+    project is read, not stored on `projects`.
+    - `plan_version` is the latest successful plan of the current model,
+      which is the plan forecasts use.
+    - `last_compile_ok` is the outcome of the latest compile of the current
+      model, kept in a new `model_compiles` table keyed by (project, model
+      version). A failed compile sets it to false and keeps the previous
+      plan.
+  - Listings:
+    - `GET /api/world/projects/:id/tasks?kind&status` returns at most 100
+      tasks, newest first. `status` may list several values separated by
+      commas. A bad filter or unknown parameter is 400 `invalid_query`.
+    - `GET /api/report/projects/:id/reports` returns `{report_id, run_id,
+      scenario_id, query_kind, created_at}`, newest first. The scenario and
+      query kind come from the owning run.
+    - `GET /api/report/projects/:id/reports/:reportId` is a project-scoped
+      read: a cross-project ID is 404.
+    - Run list items gain `query_kind`, `effect_status`, and `report_id`.
+  - `GET /api/model/projects/:id/model` returns the stored canonical
+    `model_import.v1` body plus `model_version` and `world_version`. If that
+    body is PUT again, the model version is the same.
+  - `src/wire.ts` is the contract. It defines `MetricValue = number |
+    "missing" | "+inf"` (D17), the `kernel.v1` payload, the model import,
+    the full forecast response (`ForecastResult`), and the full report body
+    (`ForecastReportBody`). `forecast/types.ts`, `report/serialize.ts`, and
+    `model/codec.ts` re-export these shapes instead of defining their own.
+- why: a model validated against one world can name entities or kinds that
+  the next world lacks. If stale plan and compile pointers were left in
+  place, the UI would offer forecasts that the server then refuses.
+  Deriving the history fields when a project is read keeps one source of
+  truth. A reloaded page needs to find its running extraction without
+  having kept the task ID.
+- alternatives:
+  - Keeping plans keyed by model version across world changes. Rejected:
+    switching worlds A→B→A would revive a plan without any review.
+  - Clearing runs and reports along with the model. Rejected: they are
+    immutable artifacts (invariant 11).
+  - Adding `plan_version` and `last_compile_ok` columns to `projects`.
+    Rejected: existing state files would need a migration, while a new
+    table is created in place (as in D18).

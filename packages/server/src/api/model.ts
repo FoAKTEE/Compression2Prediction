@@ -1,9 +1,10 @@
 /**
  * `/api/model`: eligibility (from the stored world); model import (`PUT
- * .../model`, an immutable `model` artifact); compile (core unroll +
- * compilePlan, storing a `plan` artifact; compile errors are 200 with
- * `ok: false` and diagnostics); variables, mechanisms, and the mechanism
- * graph (bindings from the latest plan of the current model).
+ * .../model`, an immutable `model` artifact) and read-back (`GET .../model`);
+ * compile (core unroll + compilePlan, storing a `plan` artifact; compile
+ * errors are 200 with `ok: false` and diagnostics; every outcome is recorded
+ * on the project); variables, mechanisms, and the mechanism graph (bindings
+ * from the latest plan of the current model).
  */
 import { isPlainObject } from "@c2p/core";
 import type { FastifyInstance } from "fastify";
@@ -18,6 +19,7 @@ import type {
   ListMechanismsResponse,
   ListVariablesResponse,
   MechanismGraphResponse,
+  ModelResponse,
 } from "../wire.js";
 import { DEFAULT_SCENARIO, eligibilityResponse } from "../world/codec.js";
 import { integrity, loadModel, loadWorld, requireProject, requireWorld } from "./common.js";
@@ -98,6 +100,13 @@ export function registerModelRoutes(app: FastifyInstance, ctx: AppContext): void
     },
   );
 
+  app.get<{ Params: ProjectParams }>("/api/model/projects/:projectId/model", async (req): Promise<ModelResponse> => {
+    const project = requireProject(ctx, req.params.projectId);
+    const stored = loadModel(ctx, project);
+    if (stored === null) throw notFound("model_not_found", `project ${project.project_id} has no model yet`);
+    return { ...stored.body, model_version: project.model_version!, world_version: stored.world_version };
+  });
+
   app.post<{ Params: ProjectParams }>("/api/model/projects/:projectId/compile", async (req): Promise<CompileModelResponse> => {
     const project = requireProject(ctx, req.params.projectId);
     const request = validateCompileRequest(req.body, bounds.maxHorizonSteps);
@@ -116,11 +125,9 @@ export function registerModelRoutes(app: FastifyInstance, ctx: AppContext): void
       horizon: request.horizon_steps ?? stored.model.horizon_steps,
       mechanismIds: request.mechanism_ids,
     });
-    if (outcome.ok) {
-      const planVersion = ctx.models.storePlan(project.project_id, outcome.payload(modelVersion, stored.world_version));
-      if (!ctx.projects.setPlan(project.project_id, modelVersion, planVersion)) {
-        throw conflict("version_conflict", "the model changed during compilation");
-      }
+    const planVersion = outcome.ok ? ctx.models.storePlan(project.project_id, outcome.payload(modelVersion, stored.world_version)) : null;
+    if (!ctx.projects.recordCompile(project.project_id, modelVersion, planVersion)) {
+      throw conflict("version_conflict", "the model changed during compilation");
     }
     return { ok: outcome.ok, model_version: modelVersion, diagnostics: outcome.diagnostics };
   });

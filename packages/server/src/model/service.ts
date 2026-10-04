@@ -10,7 +10,7 @@
 import { asHash, asLiteral, requireFields, ValueError } from "@c2p/core";
 import type { ArtifactStore } from "../store/index.js";
 import { decodeModel, encodeModel } from "./codec.js";
-import type { DecodedModel } from "./codec.js";
+import type { DecodedModel, ModelImportJson } from "./codec.js";
 import { PLAN_SCHEMA } from "./compile.js";
 import type { PlanPayload } from "./compile.js";
 
@@ -22,6 +22,8 @@ export interface StoredModel {
   /** The world the model was validated against. */
   readonly world_version: string;
   readonly model: DecodedModel;
+  /** The stored canonical import body, as hashed. */
+  readonly body: ModelImportJson;
 }
 
 export class ModelService {
@@ -39,7 +41,8 @@ export class ModelService {
     const art = this.artifacts.get({ kind: MODEL_KIND, content_hash: version, scenario_id: projectId }, { scenario_id: projectId });
     const o = requireFields(art.payload, ["schema_version", "world_version", "model"], [], { name: "stored model" });
     asLiteral(o.schema_version, "schema_version", [MODEL_SCHEMA]);
-    return { world_version: asHash(o.world_version, "world_version"), model: decodeModel(o.model) };
+    // Decoding verifies the body's shape, so it can be served as stored.
+    return { world_version: asHash(o.world_version, "world_version"), model: decodeModel(o.model), body: o.model as ModelImportJson };
   }
 
   storePlan(projectId: string, plan: PlanPayload): string {

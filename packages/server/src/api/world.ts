@@ -1,6 +1,8 @@
 /**
- * `/api/world`: projects (multipart create, list, get), extraction tasks, and
- * the canonical world (GET, and PUT to import a validated bundle).
+ * `/api/world`: projects (multipart create, list, get), extraction tasks
+ * (start, and list a project's tasks so a reloaded page can resume polling),
+ * and the canonical world (GET, and PUT to import a validated bundle; a new
+ * world version clears the model, plans, and compile outcome, D21).
  */
 import path from "node:path";
 import { isPlainObject, ValueError } from "@c2p/core";
@@ -9,7 +11,10 @@ import type { UploadLimits } from "../config.js";
 import type { AppContext } from "../context.js";
 import { projectJson } from "../repos/projects.js";
 import type { NewFile, NewProject } from "../repos/projects.js";
-import type { ProjectStatus } from "../wire.js";
+import { TASK_KIND } from "../repos/tasks.js";
+import type { TaskFilter } from "../repos/tasks.js";
+import { TASK_LIST_LIMIT, TASK_STATUSES } from "../wire.js";
+import type { ListProjectsResponse, ListTasksResponse, Project, ProjectStatus, TaskStatus } from "../wire.js";
 import { decodeWorld, worldResponse } from "../world/codec.js";
 import { EXTRACTION_TASK_KIND } from "../world/extractor.js";
 import type { Extractor } from "../world/extractor.js";
@@ -86,6 +91,30 @@ function expectedVersion(value: unknown): string | null | undefined {
   throw unprocessable("invalid_world", "expected_world_version: expected a version string or null");
 }
 
+const TASK_QUERY = new Set(["kind", "status"]);
+
+/** `?kind=<kind>&status=<status>[,<status>...]`; anything else is 400 `invalid_query`. */
+function taskFilter(query: unknown): TaskFilter {
+  const q = (query ?? {}) as Record<string, unknown>;
+  const unknown = Object.keys(q).filter((k) => !TASK_QUERY.has(k));
+  if (unknown.length) throw badRequest("invalid_query", `unknown query parameter(s) ${unknown.sort().join(", ")}`);
+  const filter: { kind?: string; statuses?: TaskStatus[] } = {};
+  if (q.kind !== undefined) {
+    if (typeof q.kind !== "string" || !TASK_KIND.test(q.kind)) throw badRequest("invalid_query", `kind: invalid ${JSON.stringify(q.kind)}`);
+    filter.kind = q.kind;
+  }
+  if (q.status !== undefined) {
+    if (typeof q.status !== "string") throw badRequest("invalid_query", "status: give one value, or several separated by commas");
+    const statuses = q.status.split(",");
+    const bad = statuses.filter((s) => !TASK_STATUSES.includes(s as TaskStatus));
+    if (bad.length) {
+      throw badRequest("invalid_query", `status: ${JSON.stringify(bad[0])} is not one of ${TASK_STATUSES.join(", ")}`);
+    }
+    filter.statuses = [...new Set(statuses as TaskStatus[])];
+  }
+  return filter;
+}
+
 /** Register the `world_extraction` job kind for `extractor` (node N8). */
 export function registerExtractor(ctx: AppContext, extractor: Extractor): void {
   ctx.runner.register(EXTRACTION_TASK_KIND, async ({ input, progress }) => {
@@ -112,7 +141,7 @@ export function registerExtractor(ctx: AppContext, extractor: Extractor): void {
 }
 
 export function registerWorldRoutes(app: FastifyInstance, ctx: AppContext): void {
-  app.get("/api/world/projects", async () => ({ projects: ctx.projects.list() }));
+  app.get("/api/world/projects", async (): Promise<ListProjectsResponse> => ({ projects: ctx.projects.list() }));
 
   app.post("/api/world/projects", async (req, reply) => {
     const input = await readProjectForm(req, ctx.config.upload);
@@ -120,9 +149,14 @@ export function registerWorldRoutes(app: FastifyInstance, ctx: AppContext): void
     return reply.code(201).send(projectJson(project));
   });
 
-  app.get<{ Params: ProjectParams }>("/api/world/projects/:projectId", async (req) =>
+  app.get<{ Params: ProjectParams }>("/api/world/projects/:projectId", async (req): Promise<Project> =>
     projectJson(requireProject(ctx, req.params.projectId)),
   );
+
+  app.get<{ Params: ProjectParams }>("/api/world/projects/:projectId/tasks", async (req): Promise<ListTasksResponse> => {
+    const project = requireProject(ctx, req.params.projectId);
+    return { tasks: ctx.tasks.list(project.project_id, taskFilter(req.query), TASK_LIST_LIMIT) };
+  });
 
   app.post<{ Params: ProjectParams }>("/api/world/projects/:projectId/extraction", async (req, reply) => {
     const project = requireProject(ctx, req.params.projectId);

@@ -42,6 +42,7 @@ function run(projectId: string, runId: string): ForecastRun {
     horizon_steps: 2,
     created_at: "2026-10-04T00:00:00.000Z",
     query_kind: "observational",
+    effect_status: "not_applicable",
     interventions: [],
     model_version: null,
     task_id: null,
@@ -388,11 +389,15 @@ describe("forecast execution: the guide §13 incident example", () => {
       project_id: a,
       scenario_id: "extra_crew",
       status: "completed",
+      query_kind: "interventional",
+      effect_status: "model_based_intervention",
       target_entity_id: INCIDENT,
       target_variable: "incident_status",
       horizon_steps: 2,
+      report_id: second.report_id,
       created_at: second.created_at,
     });
+    expect(list[1]).toMatchObject({ query_kind: "observational", effect_status: "not_applicable", report_id: first.report_id });
     const got = await app.inject({ method: "GET", url: `/api/forecast/projects/${a}/runs/${second.run_id}` });
     expect(got.statusCode).toBe(200);
     expect(got.json()).toEqual(second);

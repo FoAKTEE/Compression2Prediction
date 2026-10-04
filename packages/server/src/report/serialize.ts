@@ -7,25 +7,35 @@
  */
 import { asBool, asStr, isPlainObject, ORIGINS, ValueError } from "@c2p/core";
 import type { Origin } from "@c2p/core";
-import type { EffectStatus, ForecastUncertainty, KernelProvenance } from "../forecast/types.js";
-import type { KeyJson } from "../model/codec.js";
-import { METRIC_MISSING } from "../wire.js";
+import { METRIC_MISSING, METRIC_PLUS_INF } from "../wire.js";
 import type {
   CalibrationSummary,
-  ForecastReport,
+  EffectStatus,
+  ForecastReportBody,
+  ForecastUncertainty,
   HorizonDistribution,
   Intervention,
+  KernelProvenance,
   MetricValue,
   Missing,
+  PlusInf,
   QueryKind,
-  ScenarioForecast,
+  ReportExtensions,
+  ReportPrior,
+  ReportScenarioForecast,
+  ReportStatement,
   ValidationSummary,
 } from "../wire.js";
 
-export const METRIC_PLUS_INF = "+inf";
-export type PlusInf = typeof METRIC_PLUS_INF;
-/** D17: `number | "missing" | "+inf"`. */
-export type ReportMetric = MetricValue | PlusInf;
+export type {
+  ForecastReportBody,
+  ReportAssumptions,
+  ReportExtensions,
+  ReportPrior,
+  ReportScenarioForecast,
+  ReportSourceBacked,
+  ReportStatement,
+} from "../wire.js";
 
 export interface ReportValidationInput {
   readonly status: string;
@@ -34,62 +44,6 @@ export interface ReportValidationInput {
   readonly calibration?: CalibrationSummary | Missing | null;
   readonly parameter_uncertainty?: string | null;
   readonly model_error?: string | null;
-}
-
-export interface ReportValidation extends Omit<ValidationSummary, "nll_bits" | "brier"> {
-  nll_bits: ReportMetric;
-  brier: MetricValue;
-}
-
-export interface ReportScenarioForecast extends ScenarioForecast {
-  effect_status?: EffectStatus;
-}
-
-/** Template text about model probability mass; never a real-world probability. */
-export interface ReportStatement {
-  kind: "distribution" | "comparison";
-  scenario_id: string | null;
-  horizon_step: number;
-  value: string;
-  text: string;
-}
-
-export interface ReportPrior {
-  key: KeyJson;
-  distribution: number[];
-  origin: Origin;
-}
-
-/** Causal assumptions, kept apart from source-backed observations (guide §10.9). */
-export interface ReportAssumptions {
-  causal_basis: string[];
-  kernels: KernelProvenance[];
-  priors: ReportPrior[];
-  interventions: Intervention[];
-  notes: string[];
-}
-
-export interface ReportSourceBacked {
-  evidence_count: number;
-  claim_count: number;
-}
-
-/** Fields a forecast-run report carries beyond the contract's `ForecastReport`. */
-export interface ReportExtensions {
-  scenario_id?: string;
-  base_scenario_id?: string;
-  query_kind?: QueryKind;
-  effect_status?: EffectStatus;
-  step_minutes?: number | null;
-  plan_version?: string;
-  graph_hash?: string;
-  model_hash?: string;
-  intervened_model_hash?: string | null;
-  uncertainty?: ForecastUncertainty;
-  assumptions?: ReportAssumptions;
-  source_backed?: ReportSourceBacked;
-  statements?: ReportStatement[];
-  statement_policy?: string;
 }
 
 export interface ReportInput extends ReportExtensions {
@@ -107,9 +61,6 @@ export interface ReportInput extends ReportExtensions {
   readonly created_at: string;
 }
 
-export type ForecastReportBody = Omit<ForecastReport, "validation" | "forecasts"> &
-  ReportExtensions & { validation: ReportValidation; forecasts: ReportScenarioForecast[] };
-
 const absent = (v: unknown): boolean => v === undefined || v === null || v === METRIC_MISSING;
 
 function finite(v: unknown, field: string): number {
@@ -125,12 +76,12 @@ function count(v: unknown, field: string): number {
 }
 
 /** A bounded metric: finite or "missing". */
-export function metric(v: unknown, field: string): MetricValue {
+export function metric(v: unknown, field: string): number | Missing {
   return absent(v) ? METRIC_MISSING : finite(v, field);
 }
 
 /** An unbounded metric (NLL): +∞ becomes "+inf"; NaN and -∞ are rejected. */
-export function unboundedMetric(v: unknown, field: string): ReportMetric {
+export function unboundedMetric(v: unknown, field: string): MetricValue {
   if (v === Number.POSITIVE_INFINITY || v === METRIC_PLUS_INF) return METRIC_PLUS_INF;
   return metric(v, field);
 }
@@ -177,7 +128,7 @@ function horizon(h: HorizonDistribution, where: string): HorizonDistribution {
   };
 }
 
-export function serializeValidation(v: ReportValidationInput): ReportValidation {
+export function serializeValidation(v: ReportValidationInput): ValidationSummary {
   return {
     status: asStr(v.status, "validation.status"),
     nll_bits: unboundedMetric(v.nll_bits, "validation.nll_bits"),

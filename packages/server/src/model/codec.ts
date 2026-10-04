@@ -36,6 +36,7 @@ import {
 import type { Binding, Kind, Kernel, MechanismSpecJson, VariableKey } from "@c2p/core";
 import { kernelFromPayload, kernelToPayload, validateName } from "../store/index.js";
 import type { KernelPayload, ParameterOrigin } from "../store/index.js";
+import type { InitialBelief, KernelPayloadJson, KeyJson, ModelImportBody, SpaceJson, TemplateJson, VariableDefJson } from "../wire.js";
 import type { WorldBundle } from "../world/codec.js";
 
 export const MODEL_IMPORT_SCHEMA = "model_import.v1";
@@ -52,55 +53,10 @@ export const MODEL_FIELDS = Object.freeze([
 const VARIABLE_FIELDS = ["variable_id", "domain_by_kind", "units", "missingness", "ownership", "observation_ref"];
 const TEMPLATE_FIELDS = ["template_id", "mechanism", "kind", "role", "bindings", "regime", "data_origin_partition"];
 
-export interface SpaceJson {
-  name: string;
-  values: string[];
-}
-
-export interface VariableDefJson {
-  variable_id: string;
-  domain_by_kind: Partial<Record<Kind, SpaceJson>>;
-  units: string;
-  missingness: "reject" | "explicit_state";
-  ownership: "exogenous" | "endogenous";
-  observation_ref: string | null;
-}
-
-export interface BindingJson {
-  port: string;
-  selector: "self" | "scope";
-  required_role: string | null;
-}
-
-export interface TemplateJson {
-  template_id: string;
-  mechanism: MechanismSpecJson;
-  kind: Kind;
-  role: string;
-  bindings: BindingJson[];
-  regime: string;
-  data_origin_partition: string;
-}
-
-/** Wire form of a variable key. */
-export type KeyJson = [scenario_id: string, variable_id: string, entity_id: string, time_index: number];
-
-export interface InitialJson {
-  key: KeyJson;
-  distribution: number[];
-}
-
+export type { BindingJson, KeyJson, SpaceJson, TemplateJson, VariableDefJson } from "../wire.js";
+export type InitialJson = InitialBelief;
 /** Canonical import body (no `expected_model_version`). */
-export interface ModelImportJson {
-  schema_version: typeof MODEL_IMPORT_SCHEMA;
-  registry: { version: string; variables: VariableDefJson[] };
-  templates: TemplateJson[];
-  kernels: { kernel_ref: string; payload: KernelPayload }[];
-  horizon_steps: number;
-  scenario_id: string;
-  sources: KeyJson[];
-  initial: InitialJson[];
-}
+export type ModelImportJson = ModelImportBody;
 
 export interface ModelKernel {
   readonly kernel: Kernel;
@@ -337,7 +293,8 @@ export function encodeModel(m: DecodedModel): ModelImportJson {
     schema_version: MODEL_IMPORT_SCHEMA,
     registry: { version: m.registry.version, variables: m.registry.variables.map(variableJson) },
     templates: m.templates.map(templateJson),
-    kernels: [...m.kernels].map(([kernel_ref, k]) => ({ kernel_ref, payload: k.payload })),
+    // Same JSON; the wire type has mutable arrays.
+    kernels: [...m.kernels].map(([kernel_ref, k]) => ({ kernel_ref, payload: k.payload as KernelPayloadJson })),
     horizon_steps: m.horizon_steps,
     scenario_id: m.scenario_id,
     sources: m.sources.map(keyJson),

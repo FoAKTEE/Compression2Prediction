@@ -20,7 +20,16 @@ describe("projects", () => {
     expect(res.statusCode, res.body).toBe(201);
     const created = res.json();
     expect(created.project_id).toMatch(/^proj_[0-9a-f]{24}$/);
-    expect(created).toMatchObject({ ...PROJECT_FIELDS, status: "created", world_version: null });
+    expect(created).toMatchObject({
+      ...PROJECT_FIELDS,
+      status: "created",
+      world_version: null,
+      model_version: null,
+      plan_version: null,
+      last_compile_ok: null,
+      latest_run_id: null,
+      latest_report_id: null,
+    });
     expect(created.files).toHaveLength(1);
     expect(created.files[0]).toEqual({
       file_id: expect.stringMatching(/^file_[0-9a-f]{24}$/),
@@ -43,6 +52,12 @@ describe("projects", () => {
         status: "created",
         created_at: created.created_at,
         updated_at: created.updated_at,
+        world_version: null,
+        model_version: null,
+        plan_version: null,
+        last_compile_ok: null,
+        latest_run_id: null,
+        latest_report_id: null,
       },
     ]);
 
