@@ -1,13 +1,14 @@
 /** N5.1: budgeted exact enumeration (memo §2.6, §4.2; guide §3.3, §6.3, §8.1). */
 import { describe, expect, it } from "vitest";
 import { exactJoint, exactQuery } from "../src/inference/index.js";
-import type { Prior } from "../src/inference/index.js";
+import type { InferenceMethod, Prior } from "../src/inference/index.js";
 import { copy, identity, Kernel, Rational, spaceEquals } from "../src/index.js";
 import { bigBudget } from "./fixtures/causal.js";
 import {
   announcement,
   BIT,
   bit,
+  CHAIN_KERNEL,
   chainPlan,
   crew,
   FAIR,
@@ -180,27 +181,57 @@ describe("budgets and validation", () => {
   it("test_budget_overflow_raises", () => {
     const plan = incidentPlan();
     // 3 x 2 x 1 x 3 x 2 x 1 x 3 = 108 joint entries over the seven ancestors of status(2).
-    const query = (max: number) =>
-      exactQuery(plan, { target: status(2), initial: incidentPriors(), budget: bigBudget({ max_factor_entries: max }) });
-    raises(() => query(107), /over 7 ancestor variables needs 108 joint entries, exceeding max_factor_entries 107/);
-    close(query(108).distribution, [0.36, 0.39, 0.25]);
+    const query = (max: number, method?: InferenceMethod) =>
+      exactQuery(plan, { target: status(2), initial: incidentPriors(), budget: bigBudget({ max_factor_entries: max }), ...(method && { method }) });
+    raises(() => query(107, "enumeration"), /over 7 ancestor variables needs 108 joint entries, exceeding max_factor_entries 107/);
+    const fits = query(108);
+    expect(fits.method).toBe("enumeration");
+    close(fits.distribution, [0.36, 0.39, 0.25]);
+    // D25: past the full joint, frontier elimination answers; its largest table is crew x status x supplies x next = 18.
+    const frontier = query(107);
+    expect(frontier.method).toBe("frontier");
+    close(frontier.distribution, [0.36, 0.39, 0.25]);
+    expect(query(18).method).toBe("frontier");
+    raises(
+      () => query(17),
+      /frontier inference over 7 ancestor variables needs a frontier table of 18 entries over 4 variables when adding .*"incident_status".*1\], exceeding max_factor_entries 17/,
+    );
 
     // 2^61 entries: the check runs before any enumeration, or this would never return.
     const chain = chainPlan(60);
     const initial: Prior[] = [[bit("x", 0), [1, 0]]];
     raises(
-      () => exactQuery(chain, { target: bit("x", 60), initial, budget }),
+      () => exactQuery(chain, { target: bit("x", 60), initial, budget, method: "enumeration" }),
       /over 61 ancestor variables needs 2305843009213693952 joint entries, exceeding max_factor_entries 10000/,
     );
+    // Unforced, the frontier walks the same chain with tables of at most 4 entries.
+    const long = exactQuery(chain, { target: bit("x", 60), initial, budget: bigBudget({ max_factor_entries: 4 }) });
+    expect(long.method).toBe("frontier");
+    let belief = [1, 0];
+    for (let t = 0; t < 60; t++) belief = push(belief, CHAIN_KERNEL.rows);
+    close(long.distribution, belief);
     // An early tick of the same long chain has few ancestors.
     const early = exactQuery(chain, { target: bit("x", 3), initial, budget: bigBudget({ max_factor_entries: 16 }) });
     expect(early.distribution).toHaveLength(2);
-    raises(() => exactQuery(chain, { target: bit("x", 3), initial, budget: bigBudget({ max_factor_entries: 15 }) }), /needs 16 joint entries/);
+    expect(early.method).toBe("enumeration");
+    raises(
+      () => exactQuery(chain, { target: bit("x", 3), initial, budget: bigBudget({ max_factor_entries: 15 }), method: "enumeration" }),
+      /needs 16 joint entries/,
+    );
+    close(exactQuery(chain, { target: bit("x", 3), initial, budget: bigBudget({ max_factor_entries: 15 }) }).distribution, early.distribution);
     // Evidence ancestors count too.
     raises(
-      () => exactQuery(chain, { target: bit("x", 0), evidence: [[bit("x", 4), "1"]], initial, budget: bigBudget({ max_factor_entries: 16 }) }),
+      () =>
+        exactQuery(chain, {
+          target: bit("x", 0),
+          evidence: [[bit("x", 4), "1"]],
+          initial,
+          budget: bigBudget({ max_factor_entries: 16 }),
+          method: "enumeration",
+        }),
       /over 5 ancestor variables needs 32 joint entries/,
     );
+    raises(() => exactQuery(chain, { target: bit("x", 3), initial, budget, method: "exhaustive" as never }), /method: expected one of \['enumeration', 'frontier'\]/);
   });
 
   it("rejects malformed queries", () => {

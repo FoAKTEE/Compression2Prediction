@@ -957,3 +957,70 @@ say so explicitly and never rewrite history.
 - next: a generator over any compiled plan with simulator-fitted kernels; a
   backtest on observed transitions (never pooled with simulated ones) that
   can fill the report's NLL/Brier/calibration instead of `"missing"`.
+
+## D25 — Frontier inference past the enumeration budget
+
+- date: 2026-10-04
+- decision:
+  - Dispatch. `exactQuery` and `exactJoint` size the full joint over the
+    ancestor slice of target ∪ evidence as before (product of the full Space
+    sizes). If it fits `max_factor_entries`, they enumerate with the existing
+    code, so outputs and golden parity are bit-identical. Otherwise they run
+    frontier elimination (`inference/frontier.ts`). Results carry
+    `method: "enumeration" | "frontier"` (`ExactInference`, a subtype of
+    `ExactResult`). An optional `method` option forces one; forced
+    enumeration over budget raises the old message. `runQuery`, its
+    `QueryResult`, and the server API are unchanged.
+  - Algorithm. The slice's writers are walked in plan (topological) order.
+    One table holds the joint of the frontier: generated, unobserved
+    variables still needed (a target, or read by a later writer in the
+    slice). A source enters with its own independent prior just before its
+    first reader; a source no writer in the slice reads (a target or
+    evidence key) enters at the end. A writer extends the table by
+    K(output | inputs). Evidence keeps only the observed value's mass, so an
+    observed key never takes a table dimension and its readers use the
+    observed value. After each writer, every variable it read last is summed
+    out. At the end only unobserved targets remain. The result is
+    normalized by the `fsum` of the evidence mass, and zero evidence raises
+    the enumeration's ValueError.
+  - Budget. The whole schedule (the table size after every extension) is
+    computed from Space sizes and the evidence before any table is
+    allocated. The first table larger than `max_factor_entries` raises
+    `frontier inference over N ancestor variables needs a frontier table of
+    S entries over V variables when adding K, exceeding max_factor_entries
+    M`. The extended table counts, before its summation. On the frontier
+    path, the target product must also fit, since the result Space is built
+    in full. The walk follows plan order with no elimination-order search.
+    For unrolled templates the peak is one tick's frontier times the next
+    tick's outputs: 36 entries for the 200-step coupled chain, against 6^201
+    for enumeration.
+  - Numerics. Summation is Neumaier-compensated, and the final
+    normalization uses `fsum`. A linear table whose largest mass is below
+    2^-256 is rescaled by a power of two (exact; it cancels in the
+    normalization). A positive product below 2^-1022 moves the table to log
+    space for the rest of the walk, with log-sum-exp per cell (D23 policy).
+    Structural zeros stay zero.
+  - Server. Forecasts still call `runQuery` once per horizon step, and long
+    horizons now succeed. The run labels (`random_stream_layout:
+    "exact_enumeration"`, uncertainty method
+    `exact_enumeration_given_hand_specified_kernels`) are unchanged. Both
+    methods compute the same exact law, up to float rounding.
+- why: memo §2.6 calls for exact elimination with bounded factors.
+  Enumeration is exponential in the horizon. A 26-step weekly model with
+  6 × 2 × 2 values per tick exceeded 1,048,576 entries, although its
+  frontier needs a few hundred. Keeping enumeration wherever it fits leaves
+  existing results and golden parity untouched.
+- alternatives:
+  - Always use the frontier. Rejected: it moves the last bits of every
+    existing query.
+  - Min-fill or min-degree elimination orders. Deferred: plan order is
+    already good for time-unrolled chains; general DAGs may need one.
+  - Fuse each extension with its summation. Deferred: the budget bounds the
+    extended factor, and the tables stay small.
+  - Check the budget per step during execution. Rejected: the symbolic
+    schedule raises before any allocation and names the overflowing step.
+  - Carry `method` on `runQuery` results. Deferred: it needs `queries.ts`
+    and `QueryResult`, and the server API stays as it is.
+- next: produce all horizon marginals in one forward pass (the forecast
+  service queries each step separately, O(h²) writer steps); add
+  elimination-order heuristics; record the method in run manifests.

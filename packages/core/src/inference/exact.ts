@@ -1,13 +1,16 @@
 /**
- * Budgeted exact enumeration over a compiled plan (memo §2.6, §4.2).
+ * Budgeted exact inference over a compiled plan (memo §2.6, §4.2).
  *
- * The joint over the ancestors of target ∪ evidence is built in topological
- * order, one variable at a time. Every source among them takes exactly one
- * prior, so a shared latent root is one variable and the dependence it induces
- * is kept (guide §3.3, §6.3). Evidence conditions by Bayes and never edits the
- * plan (guide §8.1); zero evidence probability raises. A positive product
- * that underflows reruns the enumeration in log space, so tiny likelihoods
- * keep their ratios and only structural zeros count as impossible.
+ * The query is restricted to the ancestors of target ∪ evidence. Every source
+ * among them takes exactly one prior, so a shared latent root is one variable
+ * and the dependence it induces is kept (guide §3.3, §6.3). Evidence
+ * conditions by Bayes and never edits the plan (guide §8.1); zero evidence
+ * probability raises. When the full joint over the slice fits
+ * ``max_factor_entries`` it is enumerated in topological order, one variable
+ * at a time; otherwise frontier elimination (``frontier.ts``) keeps only the
+ * still-needed variables in its table (D25). A positive product that
+ * underflows moves the computation to log space, so tiny likelihoods keep
+ * their ratios and only structural zeros count as impossible.
  */
 import { Budget, Plan } from "../causal/compiler.js";
 import type { PlanNode } from "../causal/compiler.js";
@@ -17,8 +20,10 @@ import { ValueError } from "../errors.js";
 import { MIN_NORMAL, probabilityVector, productAll } from "../kernels.js";
 import type { Space, Vector } from "../kernels.js";
 import { fsum } from "../numeric/fsum.js";
-import { contentHash, requireFields } from "../store/records.js";
+import { asLiteral, contentHash, requireFields } from "../store/records.js";
 import { repr } from "../store/repr.js";
+import { frontierJoint, ZERO_EVIDENCE } from "./frontier.js";
+import type { SliceQuery } from "./frontier.js";
 import { indexPlan, isHardInterventionNode, isInterventionNode } from "./plan.js";
 import type { PlanIndex } from "./plan.js";
 
@@ -31,12 +36,17 @@ export type QueryKind = "observational" | "conditional" | "interventional";
 export const QUERY_KINDS: readonly QueryKind[] = Object.freeze(["conditional", "interventional", "observational"]);
 /** ``identified_causal_effect`` is never produced: identification is out of scope (guide §8.3). */
 export type EffectStatus = "not_applicable" | "model_based_intervention";
+/** Full-joint enumeration, or frontier elimination when the full joint exceeds the budget. */
+export type InferenceMethod = "enumeration" | "frontier";
+export const INFERENCE_METHODS: readonly InferenceMethod[] = Object.freeze(["enumeration", "frontier"]);
 
 export interface ExactQueryOptions {
   readonly target: VariableKey;
   readonly evidence?: readonly EvidencePair[];
   readonly initial: readonly Prior[];
   readonly budget: Budget;
+  /** Force one method; by default enumeration when the full joint fits, else frontier. */
+  readonly method?: InferenceMethod;
 }
 
 export interface ExactJointOptions {
@@ -44,6 +54,7 @@ export interface ExactJointOptions {
   readonly evidence?: readonly EvidencePair[];
   readonly initial: readonly Prior[];
   readonly budget: Budget;
+  readonly method?: InferenceMethod;
 }
 
 export interface ExactResult {
@@ -51,6 +62,11 @@ export interface ExactResult {
   readonly space: Space;
   readonly query_kind: QueryKind;
   readonly effect_status: EffectStatus;
+}
+
+/** An ``exactQuery`` / ``exactJoint`` result with the method that produced it. */
+export interface ExactInference extends ExactResult {
+  readonly method: InferenceMethod;
 }
 
 interface Slot {
@@ -144,7 +160,8 @@ function ancestors(idx: PlanIndex, roots: readonly string[]): { sources: string[
   return { sources, nodes };
 }
 
-function enumerate(plan: unknown, targetKeys: readonly VariableKey[], options: Record<string, unknown>): ExactResult {
+/** Validated query on its ancestor slice, plus the full-joint size over that slice. */
+function sliceQuery(plan: unknown, targetKeys: readonly VariableKey[], options: Record<string, unknown>): SliceQuery & { entries: bigint } {
   const idx = indexPlan(plan);
   if (!(options.budget instanceof Budget)) throw new ValueError(`budget: expected Budget, got ${repr(options.budget)}`);
   const budget = options.budget;
@@ -160,16 +177,14 @@ function enumerate(plan: unknown, targetKeys: readonly VariableKey[], options: R
   const { sources, nodes } = ancestors(idx, [...targets, ...observed.keys()]);
   for (const k of sources) if (!priors.has(k)) throw new ValueError(`initial: missing prior for source key ${k}`);
   const order = [...sources, ...nodes.map((w) => variableKeyString(idx.plan.nodes[w]!.output))];
-
-  // Budget before any enumeration or product Space.
   const entries = order.reduce((n, k) => n * BigInt(idx.spaces.get(k)!.values.length), 1n);
-  if (entries > BigInt(budget.max_factor_entries)) {
-    throw new ValueError(
-      `exact enumeration over ${order.length} ancestor variables needs ${entries} joint entries, exceeding ` +
-        `max_factor_entries ${budget.max_factor_entries}`,
-    );
-  }
+  return { idx, budget, targets, observed, priors, sources, nodes, entries };
+}
 
+/** Full-joint enumeration; the caller has checked the budget. */
+function enumerate(q: SliceQuery): number[] {
+  const { idx, observed, priors, sources, nodes, targets } = q;
+  const order = [...sources, ...nodes.map((w) => variableKeyString(idx.plan.nodes[w]!.output))];
   const position = new Map(order.map((k, i) => [k, i] as const));
   const slots: Slot[] = order.map((k, i) => {
     const space = idx.spaces.get(k)!;
@@ -241,8 +256,8 @@ function enumerate(plan: unknown, targetKeys: readonly VariableKey[], options: R
 
   const targetSlots = targets.map((k) => position.get(k)!);
   const targetSpaces = targets.map((k) => idx.spaces.get(k)!);
-  const space = productAll(targetSpaces);
-  const terms: number[][] = space.values.map(() => []);
+  const size = targetSpaces.reduce((n, s) => n * s.values.length, 1);
+  const terms: number[][] = Array.from({ length: size }, () => []);
   const all: number[] = [];
   // Log weights are shifted by their maximum before exponentiation.
   let shift = 0;
@@ -262,19 +277,43 @@ function enumerate(plan: unknown, targetKeys: readonly VariableKey[], options: R
     all.push(w);
   }
   const evidence = fsum(all);
-  if (!(evidence > 0)) {
-    throw new ValueError("the evidence has zero probability under this model; it is not repaired");
+  if (!(evidence > 0)) throw new ValueError(ZERO_EVIDENCE);
+  return terms.map((list) => fsum(list) / evidence);
+}
+
+/**
+ * Enumeration when the full joint over the slice fits ``max_factor_entries``
+ * (or is forced), else frontier elimination. Budgets are checked before any
+ * table or product Space is built.
+ */
+function infer(plan: unknown, targetKeys: readonly VariableKey[], options: Record<string, unknown>): ExactInference {
+  const q = sliceQuery(plan, targetKeys, options);
+  const forced = options.method === undefined ? null : asLiteral(options.method, "method", INFERENCE_METHODS);
+  const max = BigInt(q.budget.max_factor_entries);
+  const method = forced ?? (q.entries <= max ? "enumeration" : "frontier");
+  if (method === "enumeration" && q.entries > max) {
+    throw new ValueError(
+      `exact enumeration over ${q.sources.length + q.nodes.length} ancestor variables needs ${q.entries} joint entries, exceeding ` +
+        `max_factor_entries ${q.budget.max_factor_entries}`,
+    );
   }
-  const distribution = probabilityVector(
-    terms.map((list) => fsum(list) / evidence),
-    space.values.length,
-  );
-  const intervened = idx.plan.nodes.some(isInterventionNode);
+  const targetSpaces = q.targets.map((k) => q.idx.spaces.get(k)!);
+  const cells = targetSpaces.reduce((n, s) => n * BigInt(s.values.length), 1n);
+  if (cells > max) {
+    throw new ValueError(
+      `the target product of ${q.targets.length} variables has ${cells} values, exceeding max_factor_entries ${q.budget.max_factor_entries}`,
+    );
+  }
+  const values = method === "enumeration" ? enumerate(q) : frontierJoint(q);
+  const space = productAll(targetSpaces);
+  const distribution = probabilityVector(values, space.values.length);
+  const intervened = q.idx.plan.nodes.some(isInterventionNode);
   return Object.freeze({
     distribution,
     space,
-    query_kind: intervened ? "interventional" : observed.size > 0 ? "conditional" : "observational",
+    query_kind: intervened ? "interventional" : q.observed.size > 0 ? "conditional" : "observational",
     effect_status: intervened ? "model_based_intervention" : "not_applicable",
+    method,
   });
 }
 
@@ -307,24 +346,25 @@ export function initialLawHash(initial: readonly Prior[]): string {
 
 const QUERY_FIELDS = Object.freeze(["target", "initial", "budget"]);
 const JOINT_FIELDS = Object.freeze(["targets", "initial", "budget"]);
+const OPTIONAL_FIELDS = Object.freeze(["evidence", "method"]);
 
 /**
- * P(target | evidence) under ``plan``, by exact enumeration (memo §4.2
+ * P(target | evidence) under ``plan``, by exact inference (memo §4.2
  * ``exact_query``). ``initial`` gives one prior per source key the query
  * reaches. The plan, and so its model hash, is never changed.
  */
-export function exactQuery(plan: Plan, options: ExactQueryOptions): ExactResult {
-  const o = requireFields(options, QUERY_FIELDS, ["evidence"], { name: "exactQuery options" });
-  return enumerate(plan, [checkVariableKey(o.target, "target")], o);
+export function exactQuery(plan: Plan, options: ExactQueryOptions): ExactInference {
+  const o = requireFields(options, QUERY_FIELDS, OPTIONAL_FIELDS, { name: "exactQuery options" });
+  return infer(plan, [checkVariableKey(o.target, "target")], o);
 }
 
 /** Joint P(targets | evidence) over the left-folded product of the target Spaces, right factor fastest. */
-export function exactJoint(plan: Plan, options: ExactJointOptions): ExactResult {
-  const o = requireFields(options, JOINT_FIELDS, ["evidence"], { name: "exactJoint options" });
+export function exactJoint(plan: Plan, options: ExactJointOptions): ExactInference {
+  const o = requireFields(options, JOINT_FIELDS, OPTIONAL_FIELDS, { name: "exactJoint options" });
   if (!Array.isArray(o.targets) || o.targets.length === 0) {
     throw new ValueError(`targets: expected a nonempty array of variable keys, got ${repr(o.targets)}`);
   }
-  return enumerate(
+  return infer(
     plan,
     (o.targets as unknown[]).map((key, i) => checkVariableKey(key, `targets[${i}]`)),
     o,
