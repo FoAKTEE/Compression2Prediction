@@ -1,0 +1,10 @@
+{
+  "paper": "c2p",
+  "models": {
+    "worker": "claude-opus-5-5",
+    "jobs": "claude-opus-5-5",
+    "judge": "claude-opus-5-5",
+    "observer": "claude-opus-5-5"
+  },
+  "codex": { "effort": "max", "sandbox": "danger-full-access" }
+}

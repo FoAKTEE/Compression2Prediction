@@ -1,0 +1,21 @@
+# Nested reference repositories (pinned in progress/c2p/provenance.md; never committed)
+Chandra/
+ref-code/
+ref-paper/
+
+# Run outputs and datasets (never committed)
+runs/
+data/
+*.sqlite3
+
+# Secrets
+.env
+
+# Python build and cache artifacts
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+*.egg-info/
+build/
+dist/
