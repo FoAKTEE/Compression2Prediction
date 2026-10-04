@@ -1,6 +1,14 @@
 import { AxiosError, AxiosHeaders, type AxiosAdapter, type AxiosResponse, type InternalAxiosRequestConfig } from "axios";
 import { describe, expect, it } from "vitest";
-import { API_BASE_URL, API_TIMEOUT_MS, ApiError, apiClient, isServerUnavailable, normalizeError } from "./client";
+import {
+  API_BASE_URL,
+  API_TIMEOUT_MS,
+  ApiError,
+  apiClient,
+  codeForStatus,
+  isServerUnavailable,
+  normalizeError,
+} from "./client";
 
 function failWith(make: (config: InternalAxiosRequestConfig) => AxiosError): AxiosAdapter {
   return async (config) => {
@@ -84,6 +92,31 @@ describe("apiClient", () => {
     await expect(apiClient.get("/x", { adapter: httpError(409, { message: "version conflict" }) })).rejects.toMatchObject(
       { status: 409, code: "conflict", message: "version conflict" },
     );
+  });
+});
+
+describe("upload limits and media types", () => {
+  it("maps 413 to payload_too_large and 415 to unsupported_media_type when the body has no code", async () => {
+    expect(codeForStatus(413)).toBe("payload_too_large");
+    expect(codeForStatus(415)).toBe("unsupported_media_type");
+    await expect(apiClient.put("/world/projects/p/world", {}, { adapter: httpError(413, "") })).rejects.toMatchObject({
+      status: 413,
+      code: "payload_too_large",
+      message: "HTTP 413",
+    });
+    await expect(apiClient.post("/world/projects", {}, { adapter: httpError(415, "") })).rejects.toMatchObject({
+      status: 415,
+      code: "unsupported_media_type",
+    });
+  });
+
+  it("keeps the server's own code for a 413 when it sends one", async () => {
+    const body = { error: { code: "upload_too_large", message: "upload exceeds 10485760 bytes in total" } };
+    await expect(apiClient.post("/world/projects", {}, { adapter: httpError(413, body) })).rejects.toMatchObject({
+      status: 413,
+      code: "upload_too_large",
+      message: "upload exceeds 10485760 bytes in total",
+    });
   });
 });
 

@@ -1,9 +1,10 @@
 import { mount } from "@vue/test-utils";
 import { describe, expect, it } from "vitest";
-import type { MechanismGraphResponse, WorldResponse } from "../../api/types";
+import type { Claim, MechanismGraphResponse, WorldResponse } from "../../api/types";
 import { createTestPlugins } from "../../test-support";
 import { exampleMechanismGraph, exampleWorld } from "./examples";
 import GraphPanel from "./GraphPanel.vue";
+import { EDGE_LABEL_DEFAULTS, overlapArea, type Box } from "./labels";
 
 async function mountPanel(
   props: { world?: WorldResponse | null; mechanism?: MechanismGraphResponse | null; initialMode?: "world" | "mechanism"; loading?: boolean },
@@ -175,6 +176,80 @@ describe("GraphPanel", () => {
     const a = await mountPanel({ world: exampleWorld() });
     const b = await mountPanel({ world: exampleWorld() });
     expect(nodes(b).map((n) => n.attributes("transform"))).toEqual(nodes(a).map((n) => n.attributes("transform")));
+  });
+
+  it("draws the six-entity world's edge labels without overlaps, each on a background", async () => {
+    const w = await mountPanel({ world: exampleWorld() });
+    const edges = w.findAll("[data-testid='graph-edge']");
+    const visible = edges.filter((e) => e.attributes("data-label-hidden") === undefined);
+    expect(edges).toHaveLength(8);
+    expect(visible.length).toBeGreaterThanOrEqual(6);
+    const rect = (e: (typeof edges)[number]): Box => {
+      const r = e.get("rect.edge__label-bg");
+      return {
+        x: Number(r.attributes("x")),
+        y: Number(r.attributes("y")),
+        width: Number(r.attributes("width")),
+        height: Number(r.attributes("height")),
+      };
+    };
+    const glyphs: Box[] = nodes(w).map((n) => {
+      const [x, y] = n.attributes("transform")!.match(/-?[\d.]+/g)!.map(Number) as [number, number];
+      const reach = Number(n.get("circle.node__halo").attributes("r"));
+      return { x: x - reach, y: y - reach, width: 2 * reach, height: 2 * reach };
+    });
+    const boxes = visible.map(rect);
+    for (let i = 0; i < boxes.length; i += 1) {
+      for (let j = i + 1; j < boxes.length; j += 1) {
+        expect(overlapArea(boxes[i]!, boxes[j]!)).toBeLessThanOrEqual(EDGE_LABEL_DEFAULTS.tolerance);
+      }
+      for (const glyph of glyphs) expect(overlapArea(boxes[i]!, glyph)).toBeLessThanOrEqual(EDGE_LABEL_DEFAULTS.tolerance);
+    }
+    // The text sits at the centre of its background box.
+    for (const e of visible) {
+      const box = rect(e);
+      expect(Number(e.get("text").attributes("x"))).toBeCloseTo(box.x + box.width / 2, 1);
+    }
+  });
+
+  it("shows a hidden label while its edge is hovered or an end node is hovered, focused, or selected", async () => {
+    const world = exampleWorld();
+    const base = world.claims[0]!;
+    // Many claims between the same two entities: there is no room for every label.
+    const claims: Claim[] = Array.from({ length: 12 }, (_, i) => ({
+      ...base,
+      claim_id: `claim_${i}`,
+      predicate: `A_RATHER_LONG_PREDICATE_${i}`,
+    }));
+    const w = await mountPanel({ world: { ...world, claims } });
+    const hidden = () => w.findAll("[data-testid='graph-edge'][data-label-hidden='crowded']");
+    expect(hidden().length).toBeGreaterThan(0);
+    const edge = hidden()[0]!;
+    expect(edge.classes()).toContain("is-label-hidden");
+    expect(edge.get("text").text()).toMatch(/^A_RATHER_LONG_PREDICATE_\d+$/);
+
+    await edge.trigger("mouseenter");
+    expect(edge.classes()).toContain("is-label-revealed");
+    await edge.trigger("mouseleave");
+    expect(edge.classes()).toContain("is-label-hidden");
+
+    const author = node(w, "entity:ent_engineer_b");
+    await author.trigger("focus");
+    expect(hidden().every((e) => e.classes().includes("is-label-revealed"))).toBe(true);
+    await author.trigger("blur");
+    expect(hidden().every((e) => e.classes().includes("is-label-hidden"))).toBe(true);
+
+    await node(w, "entity:ent_notice_017").trigger("mouseenter");
+    expect(hidden().every((e) => e.classes().includes("is-label-revealed"))).toBe(true);
+    await node(w, "entity:ent_notice_017").trigger("mouseleave");
+
+    await node(w, "entity:ent_notice_017").trigger("click");
+    expect(hidden().every((e) => e.classes().includes("is-label-revealed"))).toBe(true);
+    // Edges that do not touch the selected node keep their hidden labels hidden.
+    const unrelated = w
+      .findAll("[data-testid='graph-edge'][data-label-hidden]")
+      .filter((e) => !e.classes().includes("edge--claims"));
+    for (const e of unrelated) expect(e.classes()).toContain("is-label-hidden");
   });
 
   it("translates its labels", async () => {

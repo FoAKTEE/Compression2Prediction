@@ -27,10 +27,34 @@ export type PrimaryKind =
 /** Literal marker for an absent metric. It is never coerced to a number. */
 export const MISSING = "missing";
 export type Missing = typeof MISSING;
-export type MetricValue = number | Missing;
+
+/**
+ * Wire form of an infinite metric (decision D17): an observed outcome that the
+ * model gave zero probability has infinite NLL. JSON has no infinity, so the
+ * server sends this literal string. It is shown as an impossible outcome and
+ * is never formatted as a number.
+ */
+export const PLUS_INF = "+inf";
+export type PlusInf = typeof PLUS_INF;
+
+export type MetricValue = number | Missing | PlusInf;
 
 export function isMissing(value: unknown): value is Missing {
   return value === MISSING;
+}
+
+export function isInfinite(value: unknown): value is PlusInf {
+  return value === PLUS_INF;
+}
+
+/** A metric split into its three cases, so callers cannot format a marker as a number. */
+export type MetricReading = { kind: "number"; value: number } | { kind: "missing" } | { kind: "infinite" };
+
+/** Reads a wire metric. Anything that is not a finite number or a known marker counts as missing. */
+export function readMetric(value: unknown): MetricReading {
+  if (isInfinite(value)) return { kind: "infinite" };
+  if (typeof value === "number" && Number.isFinite(value)) return { kind: "number", value };
+  return { kind: "missing" };
 }
 
 /** ISO 8601 timestamp string. */
@@ -81,6 +105,35 @@ export interface Project extends ProjectSummary {
   world_version: string | null;
 }
 
+/** A world record's provenance: where in which source a record was read, and when it became available. */
+export interface EvidenceRecord {
+  evidence_id: string;
+  source_hash: string;
+  /** Character span `[start, end)` in the source. */
+  source_span: [start: number, end: number];
+  availability_time: Timestamp;
+  extraction_version: string;
+  review_status: "unreviewed" | "reviewed" | "rejected";
+  origin: Origin;
+}
+
+export interface OntologySubtype {
+  name: string;
+  parent: string;
+}
+
+export interface OntologyRole {
+  name: string;
+  allowed_kinds: PrimaryKind[];
+  scope_kinds: PrimaryKind[];
+}
+
+export interface OntologyImport {
+  version: string;
+  subtypes: OntologySubtype[];
+  roles: OntologyRole[];
+}
+
 export interface ListProjectsResponse {
   projects: ProjectSummary[];
 }
@@ -93,6 +146,26 @@ export interface CreateProjectRequest {
 
 export interface StartExtractionResponse {
   task: Task;
+}
+
+/**
+ * Body of `PUT /api/world/projects/:id/world`: a canonical world bundle. The
+ * server decodes every record strictly (unknown fields are rejected), checks
+ * the links, and refuses `simulated` records in the canonical world.
+ */
+export interface WorldImport {
+  /** Scenario namespace of the records; the server defaults it to `baseline`. */
+  scenario_id?: string;
+  /** Record envelope version; the server defaults it to `world.v1`. */
+  version?: string;
+  ontology: OntologyImport;
+  entities: WorldEntity[];
+  role_assignments: RoleAssignmentRecord[];
+  participations: EventParticipation[];
+  claims: Claim[];
+  evidence: EvidenceRecord[];
+  /** Compare-and-set precondition: `null` expects no world yet. A mismatch answers 409 `version_conflict`. */
+  expected_world_version?: string | null;
 }
 
 /** `(scenario_id, variable_id, entity_id, time_index)`: the key of one variable instance. */
@@ -219,7 +292,8 @@ export interface VariableDef {
 }
 
 export interface ListVariablesResponse {
-  registry_version: string;
+  /** `null` until a model has been imported. */
+  registry_version: string | null;
   variables: VariableDef[];
 }
 
@@ -247,6 +321,59 @@ export interface MechanismSpec {
 
 export interface ListMechanismsResponse {
   mechanisms: MechanismSpec[];
+}
+
+/** How a template port finds its entity: the matched entity itself, or the scope of one of its roles. */
+export interface TemplateBinding {
+  port: string;
+  selector: "self" | "scope";
+  /** Only for `scope` bindings; `null` means the template's own role. */
+  required_role: string | null;
+}
+
+/** A template (plate): one mechanism repeated over every entity of a kind holding a role. */
+export interface TemplateSpec {
+  template_id: string;
+  mechanism: MechanismSpec;
+  kind: PrimaryKind;
+  role: string;
+  bindings: TemplateBinding[];
+  regime: string;
+  data_origin_partition: string;
+}
+
+/** A kernel referenced by a mechanism's `kernel_ref`. The payload is validated by the server. */
+export interface KernelImport {
+  kernel_ref: string;
+  payload: unknown;
+}
+
+/** The initial belief over one variable instance. The distribution is validated by the server. */
+export interface InitialBelief {
+  key: VariableKey;
+  distribution: unknown;
+}
+
+export const MODEL_IMPORT_SCHEMA = "model_import.v1";
+
+/** Body of `PUT /api/model/projects/:id/model`. */
+export interface ModelImport {
+  schema_version: typeof MODEL_IMPORT_SCHEMA;
+  registry: { version: string; variables: VariableDef[] };
+  templates: TemplateSpec[];
+  kernels: KernelImport[];
+  horizon_steps: number;
+  scenario_id: string;
+  /** Exogenous source instances, each keyed `(scenario_id, variable_id, entity_id, time_index)`. */
+  sources: VariableKey[];
+  initial: InitialBelief[];
+  /** Compare-and-set precondition; a mismatch answers 409 `version_conflict`. */
+  expected_model_version?: string | null;
+}
+
+export interface ImportModelResponse {
+  model_version: string;
+  counts: { variables: number; templates: number; kernels: number; sources: number };
 }
 
 /** One variable instance in the unrolled model, keyed by {@link VariableKey}. */
@@ -350,6 +477,8 @@ export interface ForecastRequest {
   horizon_steps: number;
   initial_belief_ref?: string;
   step_minutes?: number;
+  /** Particle count for approximate inference; the server enforces its bound. */
+  particles?: number;
   interventions: Intervention[];
 }
 
@@ -449,4 +578,23 @@ export interface ForecastReport {
   forecasts: ScenarioForecast[];
   validation: ValidationSummary;
   created_at: Timestamp;
+}
+
+// ---------------------------------------------------------------- examples
+
+/** One worked example the server can load into a project. */
+export interface ExampleSummary {
+  name: string;
+  title: string;
+  description: string;
+}
+
+export interface ListExamplesResponse {
+  examples: ExampleSummary[];
+}
+
+/** An example's world (the `PUT .../world` body) and model (the `PUT .../model` body). */
+export interface ExampleBundle extends ExampleSummary {
+  world: WorldImport;
+  model: ModelImport;
 }

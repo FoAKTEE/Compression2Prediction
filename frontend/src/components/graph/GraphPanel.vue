@@ -4,6 +4,7 @@ import { computed, onBeforeUnmount, ref, shallowRef, useId, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import type { MechanismGraphResponse, Origin, WorldResponse } from "../../api/types";
 import StateNotice from "../StateNotice.vue";
+import { NODE_LABEL_FONT_SIZE, nodeObstacles, placeEdgeLabels, type Box, type HiddenReason } from "./labels";
 import { layoutGraph, type Layout } from "./layout";
 import {
   ORIGINS,
@@ -206,8 +207,13 @@ interface PlacedEdge extends ViewEdge {
   y1: number;
   x2: number;
   y2: number;
+  /** Label centre and its background box (see labels.ts). */
   lx: number;
   ly: number;
+  labelBox: Box;
+  /** Hidden labels show only while the edge or an end node is hovered, focused, or selected. */
+  labelHidden: boolean;
+  labelReason: HiddenReason | null;
 }
 
 function placed(layout: Layout, nodes: ViewNode[], edges: ViewEdge[]) {
@@ -222,12 +228,32 @@ function placed(layout: Layout, nodes: ViewNode[], edges: ViewEdge[]) {
       labelAnchor: LABEL_ANCHOR[n.labelPlacement],
     };
   });
-  const placedEdges: PlacedEdge[] = edges.flatMap((e) => {
-    const a = layout.positions[e.source];
-    const b = layout.positions[e.target];
-    if (!a || !b || e.source === e.target) return [];
+  const drawn = edges.filter((e) => layout.positions[e.source] && layout.positions[e.target] && e.source !== e.target);
+  const labels = placeEdgeLabels(
+    drawn.map((e) => ({
+      id: e.id,
+      label: e.label,
+      source: layout.positions[e.source]!,
+      target: layout.positions[e.target]!,
+      sourceRadius: (radius.get(e.source) ?? 0) + 3,
+      targetRadius: (radius.get(e.target) ?? 0) + 8,
+    })),
+    nodeObstacles(placedNodes, NODE_LABEL_FONT_SIZE),
+  );
+  const placedEdges: PlacedEdge[] = drawn.map((e, i) => {
+    const a = layout.positions[e.source]!;
+    const b = layout.positions[e.target]!;
     const seg = trimSegment(a, b, (radius.get(e.source) ?? 0) + 3, (radius.get(e.target) ?? 0) + 8);
-    return [{ ...e, ...seg, lx: (a.x + b.x) / 2, ly: (a.y + b.y) / 2 - 5 }];
+    const label = labels[i]!;
+    return {
+      ...e,
+      ...seg,
+      lx: label.x,
+      ly: label.y,
+      labelBox: label.box,
+      labelHidden: label.hidden,
+      labelReason: label.reason,
+    };
   });
   return { nodes: placedNodes, edges: placedEdges };
 }
@@ -299,6 +325,25 @@ const variableDetail = computed<VariableNode | null>(() => {
 });
 
 const hasDetail = computed(() => Boolean(entityDetail.value || mechanismDetail.value || variableDetail.value));
+
+// ---------------------------------------------------------------- hidden edge labels on hover and focus
+
+const hoveredNodeId = ref<string | null>(null);
+const focusedNodeId = ref<string | null>(null);
+const hoveredEdgeId = ref<string | null>(null);
+
+/** A hidden label shows while its edge is hovered, or while an end node is hovered, focused, or selected. */
+function labelRevealed(edge: PlacedEdge): boolean {
+  if (hoveredEdgeId.value === edge.id) return true;
+  const active = [hoveredNodeId.value, focusedNodeId.value, selectedId.value];
+  return active.some((id) => id !== null && (id === edge.source || id === edge.target));
+}
+
+watch(mode, () => {
+  hoveredNodeId.value = null;
+  focusedNodeId.value = null;
+  hoveredEdgeId.value = null;
+});
 
 // ---------------------------------------------------------------- zoom and pan (real browsers only)
 
@@ -436,18 +481,41 @@ const legendNodeShapes = { variable: circlePath(6), mechanism: squarePath(6.5) }
                     v-for="edge in scene.edges"
                     :key="edge.id"
                     class="edge"
-                    :class="edge.classes"
+                    :class="[
+                      ...edge.classes,
+                      {
+                        'is-label-hidden': edge.labelHidden && !labelRevealed(edge),
+                        'is-label-revealed': edge.labelHidden && labelRevealed(edge),
+                      },
+                    ]"
                     data-testid="graph-edge"
                     :data-port-index="edge.portIndex ?? undefined"
+                    :data-label-hidden="edge.labelHidden ? edge.labelReason : undefined"
+                    @mouseenter="hoveredEdgeId = edge.id"
+                    @mouseleave="hoveredEdgeId = null"
                   >
+                    <line class="edge__hit" :x1="edge.x1" :y1="edge.y1" :x2="edge.x2" :y2="edge.y2" />
                     <line
+                      class="edge__line"
                       :x1="edge.x1"
                       :y1="edge.y1"
                       :x2="edge.x2"
                       :y2="edge.y2"
                       :marker-end="`url(#${edge.strong ? arrowStrongId : arrowId})`"
                     />
-                    <text class="edge__label" :x="edge.lx" :y="edge.ly" text-anchor="middle">{{ edge.label }}</text>
+                    <g class="edge__label" data-testid="edge-label">
+                      <rect
+                        class="edge__label-bg"
+                        :x="edge.labelBox.x"
+                        :y="edge.labelBox.y"
+                        :width="edge.labelBox.width"
+                        :height="edge.labelBox.height"
+                        rx="2"
+                      />
+                      <text class="edge__label-text" :x="edge.lx" :y="edge.ly" dy="0.35em" text-anchor="middle">{{
+                        edge.label
+                      }}</text>
+                    </g>
                   </g>
                 </g>
                 <g class="nodes">
@@ -465,6 +533,10 @@ const legendNodeShapes = { variable: circlePath(6), mechanism: squarePath(6.5) }
                     :data-node-id="node.id"
                     :data-node-type="node.type"
                     @click="selectNode(node.id)"
+                    @mouseenter="hoveredNodeId = node.id"
+                    @mouseleave="hoveredNodeId = null"
+                    @focus="focusedNodeId = node.id"
+                    @blur="focusedNodeId = null"
                     @keydown.enter.prevent="selectNode(node.id)"
                     @keydown.space.prevent="selectNode(node.id)"
                     @keydown.esc="selectedId = null"
@@ -849,7 +921,7 @@ const legendNodeShapes = { variable: circlePath(6), mechanism: squarePath(6.5) }
 }
 
 /* Edges (and their legend samples) */
-.edge line,
+.edge__line,
 .legend__line line {
   stroke: var(--c2p-text-muted);
   stroke-width: 1.25;
@@ -860,18 +932,33 @@ const legendNodeShapes = { variable: circlePath(6), mechanism: squarePath(6.5) }
   stroke-width: 2;
 }
 
-.edge--participation line {
+.edge--participation .edge__line,
+.edge--participation.legend__item line {
   stroke: var(--c2p-kind-event);
   stroke-width: 2;
 }
 
-.edge--dashed line {
+.edge--dashed .edge__line,
+.edge--dashed.legend__item line {
   stroke-dasharray: 6 4;
 }
 
-.edge--output line {
+.edge--output .edge__line,
+.edge--output.legend__item line {
   stroke: var(--c2p-ink);
   stroke-width: 2;
+}
+
+/* A wide transparent stroke makes thin edges easy to hover. */
+.edge__hit {
+  stroke: transparent;
+  stroke-width: 12;
+  fill: none;
+  pointer-events: stroke;
+}
+
+.edge:hover .edge__line {
+  stroke-width: 2.5;
 }
 
 .marker {
@@ -882,7 +969,7 @@ const legendNodeShapes = { variable: circlePath(6), mechanism: squarePath(6.5) }
   fill: var(--c2p-ink);
 }
 
-.edge__label,
+.edge__label-text,
 .node__label {
   font-family: var(--c2p-font-mono);
   paint-order: stroke;
@@ -891,9 +978,37 @@ const legendNodeShapes = { variable: circlePath(6), mechanism: squarePath(6.5) }
   stroke-linejoin: round;
 }
 
+/* Edge labels sit on an opaque background so a crossing line never runs through the text. */
 .edge__label {
+  pointer-events: none;
+  transition: opacity var(--c2p-transition);
+}
+
+.edge__label-bg {
+  fill: var(--c2p-surface);
+  fill-opacity: 0.92;
+  stroke: none;
+}
+
+.edge__label-text {
   fill: var(--c2p-text-muted);
   font-size: 11px;
+}
+
+/* Labels on short or crowded edges appear only on hover, focus, or selection. */
+.edge.is-label-hidden .edge__label {
+  opacity: 0;
+}
+
+.edge.is-label-revealed .edge__label-bg {
+  fill: var(--c2p-bg);
+  fill-opacity: 1;
+  stroke: var(--c2p-rule-strong);
+  stroke-width: 0.75;
+}
+
+.edge.is-label-revealed .edge__label-text {
+  fill: var(--c2p-text);
 }
 
 .node__label {

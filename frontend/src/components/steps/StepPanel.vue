@@ -3,12 +3,21 @@ import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 import { STEP_COUNT, STEP_KEYS, padStep, type StepNumber } from "../../process/steps";
 
-const props = defineProps<{ step: StepNumber; completed: boolean }>();
+const props = withDefaults(
+  defineProps<{
+    step: StepNumber;
+    completed: boolean;
+    /** A wired step completes from its own results, so it has no placeholder and no dev control. */
+    wired?: boolean;
+  }>(),
+  { wired: false },
+);
 const emit = defineEmits<{ complete: [] }>();
 const { t } = useI18n();
 
-// Dev-only "mark complete" control for exercising step gating; false (and removed) in production builds.
-const showDevControls = import.meta.env.DEV;
+// Dev-only "mark complete" control for exercising step gating on steps that are not wired yet;
+// false (and removed) in production builds.
+const showDevControls = computed(() => import.meta.env.DEV && !props.wired);
 
 const key = computed(() => STEP_KEYS[props.step]);
 const titleId = computed(() => `step-${props.step}-title`);
@@ -31,7 +40,7 @@ const titleId = computed(() => `step-${props.step}-title`);
 
     <slot />
 
-    <p class="step-panel__placeholder">{{ t("process.placeholder") }}</p>
+    <p v-if="!wired" class="step-panel__placeholder">{{ t("process.placeholder") }}</p>
 
     <div v-if="showDevControls" class="step-panel__dev" data-testid="dev-control">
       <span class="eyebrow">{{ t("process.dev.label") }}</span>

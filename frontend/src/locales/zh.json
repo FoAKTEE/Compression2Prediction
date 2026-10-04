@@ -13,6 +13,7 @@
     "loading": "加载中…",
     "retry": "重试",
     "refresh": "刷新",
+    "cancel": "取消",
     "remove": "移除 {name}",
     "serverUnavailable": {
       "title": "服务器不可用",
@@ -125,6 +126,144 @@
       }
     }
   },
+  "metric": {
+    "missing": "缺失",
+    "infinite": "+∞（不可能的结果）"
+  },
+  "examples": {
+    "picker": {
+      "label": "服务器示例",
+      "heading": "选择示例",
+      "loading": "正在加载示例…",
+      "empty": "此服务器未提供示例。",
+      "loadWorld": "将世界载入项目",
+      "loadModel": "将模型载入项目",
+      "loadingExample": "正在加载…"
+    }
+  },
+  "imports": {
+    "rejected": "服务器拒绝了此次导入",
+    "conflict": "项目在加载后已被修改（版本冲突）",
+    "tooLarge": "文件超过了服务器允许的大小",
+    "worldNotReady": "此项目还没有世界。请先在步骤 1 构建世界。",
+    "unreadable": "无法读取该文件",
+    "notJson": "{name} 不是有效的 JSON。",
+    "notObject": "{name} 必须只包含一个 JSON 对象。"
+  },
+  "step1": {
+    "files": {
+      "heading": "源文件",
+      "count": "没有文件 | 1 个文件 | {count} 个文件",
+      "empty": "此项目没有上传文件。",
+      "noProject": "项目从服务器加载后会显示其文件。"
+    },
+    "actions": {
+      "heading": "构建世界",
+      "runExtraction": "运行抽取",
+      "extracting": "正在抽取…",
+      "importWorld": "导入世界 JSON",
+      "importing": "正在导入…",
+      "loadExample": "将示例载入项目",
+      "needsProject": "这些操作需要从服务器加载的项目。"
+    },
+    "extraction": {
+      "progress": "抽取进度",
+      "status": {
+        "pending": "排队中",
+        "running": "运行中",
+        "completed": "已完成",
+        "failed": "失败"
+      },
+      "failed": "抽取失败",
+      "unavailable": {
+        "title": "此服务器未配置抽取",
+        "body": "请改为导入世界 JSON 文件，或将示例载入项目。"
+      }
+    },
+    "summary": {
+      "entities": "世界实体",
+      "entitiesNote": "世界中所有带类型的实体",
+      "agents": "智能体候选",
+      "agentsNote": "仅限符合条件的行动者，单独计数",
+      "events": "事件",
+      "roles": "角色",
+      "claims": "断言"
+    },
+    "noWorld": {
+      "title": "还没有世界",
+      "body": "运行抽取、导入世界 JSON 文件，或将示例载入项目。"
+    }
+  },
+  "step2": {
+    "actions": {
+      "heading": "模型",
+      "loadExampleModel": "载入示例模型",
+      "loadNamedExampleModel": "载入示例模型（{name}）",
+      "importModel": "导入模型 JSON",
+      "importing": "正在导入…",
+      "compile": "编译",
+      "compiling": "正在编译…",
+      "needsProject": "这些操作需要从服务器加载的项目。",
+      "demo": "离线示例：导入和编译需要服务器。"
+    },
+    "imported": "模型已导入：{variables} 个变量、{templates} 个模板、{kernels} 个核、{sources} 个源。",
+    "variables": {
+      "heading": "变量",
+      "registry": "注册表 {version}",
+      "noRegistry": "尚无注册表",
+      "empty": "还没有变量。请载入或导入模型。",
+      "columns": {
+        "id": "变量",
+        "domains": "按类型的取值域",
+        "units": "单位",
+        "ownership": "归属",
+        "missingness": "缺失处理"
+      }
+    },
+    "mechanisms": {
+      "heading": "机制",
+      "empty": "还没有机制。请载入或导入模型。",
+      "inputs": "输入（声明顺序）",
+      "output": "输出",
+      "kernelRef": "核",
+      "parameterOrigin": "参数来源",
+      "validationStatus": "验证状态",
+      "disabled": "已停用"
+    },
+    "compile": {
+      "heading": "编译诊断",
+      "idle": "编译模型，按编译器规则检查它。",
+      "demo": "离线示例展示的是已编译的计划。",
+      "ok": "编译成功。模型版本",
+      "failed": "编译失败 | 编译失败，1 个错误 | 编译失败，{count} 个错误",
+      "noModel": "没有可编译的模型。请先载入或导入模型。",
+      "severity": {
+        "error": "错误",
+        "warning": "警告",
+        "info": "信息"
+      },
+      "chips": {
+        "mechanism": "机制",
+        "variable": "变量",
+        "port": "端口"
+      }
+    },
+    "eligibility": {
+      "heading": "智能体资格",
+      "columns": {
+        "entity": "世界实体",
+        "kind": "类型",
+        "eligible": "可作为智能体",
+        "basis": "依据"
+      },
+      "empty": "世界中没有实体。",
+      "noBasis": "无",
+      "noWorld": {
+        "title": "还没有世界",
+        "body": "在步骤 1 构建世界后，可查看哪些实体可以作为智能体。"
+      }
+    }
+  },
   "graph": {
     "modes": {
       "label": "图视图",
@@ -232,7 +371,7 @@
       "mechanism": "机制：{name}"
     },
     "example": {
-      "load": "加载示例",
+      "load": "预览内置示例",
       "badge": "示例数据",
       "note": "随应用附带的虚构示例数据，无需服务器。"
     }

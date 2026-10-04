@@ -4,6 +4,8 @@ import axios, { type AxiosInstance } from "axios";
 export const API_BASE_URL = "/api";
 /** Default per-request timeout. Uploads pass a longer one explicitly. */
 export const API_TIMEOUT_MS = 30_000;
+/** Uploads and JSON imports can be large; they get more time than ordinary requests. */
+export const UPLOAD_TIMEOUT_MS = 120_000;
 
 /**
  * Error codes produced on the client side. A server body may carry any other
@@ -19,6 +21,8 @@ export type ClientErrorCode =
   | "forbidden"
   | "not_found"
   | "conflict"
+  | "payload_too_large"
+  | "unsupported_media_type"
   | "unprocessable"
   | "rate_limited"
   | "server_error"
@@ -50,7 +54,8 @@ export function isServerUnavailable(value: unknown): boolean {
 const GATEWAY_STATUSES = new Set([502, 503, 504]);
 const TIMEOUT_CODES = new Set(["ECONNABORTED", "ETIMEDOUT"]);
 
-function codeForStatus(status: number): ClientErrorCode {
+/** The client-side code for an HTTP status whose body carries no code of its own. */
+export function codeForStatus(status: number): ClientErrorCode {
   if (GATEWAY_STATUSES.has(status)) return "server_unavailable";
   switch (status) {
     case 400:
@@ -63,6 +68,10 @@ function codeForStatus(status: number): ClientErrorCode {
       return "not_found";
     case 409:
       return "conflict";
+    case 413:
+      return "payload_too_large";
+    case 415:
+      return "unsupported_media_type";
     case 422:
       return "unprocessable";
     case 429:

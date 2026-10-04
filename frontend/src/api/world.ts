@@ -1,4 +1,4 @@
-import { apiClient, seg } from "./client";
+import { UPLOAD_TIMEOUT_MS, apiClient, seg } from "./client";
 import type {
   CreateProjectRequest,
   ListProjectsResponse,
@@ -6,11 +6,11 @@ import type {
   ProjectSummary,
   StartExtractionResponse,
   Task,
+  WorldImport,
   WorldResponse,
 } from "./types";
 
-/** Uploads can be large; give them more time than ordinary requests. */
-export const UPLOAD_TIMEOUT_MS = 120_000;
+export { UPLOAD_TIMEOUT_MS };
 
 /** `GET /api/world/projects` */
 export async function listProjects(): Promise<ProjectSummary[]> {
@@ -50,5 +50,17 @@ export async function startExtraction(projectId: string): Promise<Task> {
 /** `GET /api/world/projects/:projectId/world` */
 export async function getWorld(projectId: string): Promise<WorldResponse> {
   const { data } = await apiClient.get<WorldResponse>(`/world/projects/${seg(projectId)}/world`);
+  return data;
+}
+
+/**
+ * `PUT /api/world/projects/:projectId/world` imports a world bundle and returns
+ * the stored world. Rejects with 422 `invalid_world` (the message names the
+ * bad record) or 409 `version_conflict` when `expected_world_version` is stale.
+ */
+export async function importWorld(projectId: string, body: WorldImport): Promise<WorldResponse> {
+  const { data } = await apiClient.put<WorldResponse>(`/world/projects/${seg(projectId)}/world`, body, {
+    timeout: UPLOAD_TIMEOUT_MS,
+  });
   return data;
 }

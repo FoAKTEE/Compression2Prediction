@@ -13,6 +13,7 @@
     "loading": "Loading…",
     "retry": "Retry",
     "refresh": "Refresh",
+    "cancel": "Cancel",
     "remove": "Remove {name}",
     "serverUnavailable": {
       "title": "Server unavailable",
@@ -125,6 +126,144 @@
       }
     }
   },
+  "metric": {
+    "missing": "missing",
+    "infinite": "+∞ (impossible outcome)"
+  },
+  "examples": {
+    "picker": {
+      "label": "Server examples",
+      "heading": "Choose an example",
+      "loading": "Loading examples…",
+      "empty": "This server offers no examples.",
+      "loadWorld": "Load world into project",
+      "loadModel": "Load model into project",
+      "loadingExample": "Loading…"
+    }
+  },
+  "imports": {
+    "rejected": "The server rejected this import",
+    "conflict": "The project changed since it was loaded (version conflict)",
+    "tooLarge": "The file is larger than the server accepts",
+    "worldNotReady": "This project has no world yet. Build the world in step 1 first.",
+    "unreadable": "The file could not be read",
+    "notJson": "{name} is not valid JSON.",
+    "notObject": "{name} must contain a single JSON object."
+  },
+  "step1": {
+    "files": {
+      "heading": "Source files",
+      "count": "No files | 1 file | {count} files",
+      "empty": "No files were uploaded with this project.",
+      "noProject": "The project's files appear once it loads from the server."
+    },
+    "actions": {
+      "heading": "Build the world",
+      "runExtraction": "Run extraction",
+      "extracting": "Extracting…",
+      "importWorld": "Import world JSON",
+      "importing": "Importing…",
+      "loadExample": "Load example into project",
+      "needsProject": "These actions need the project from the server."
+    },
+    "extraction": {
+      "progress": "Extraction progress",
+      "status": {
+        "pending": "Queued",
+        "running": "Running",
+        "completed": "Completed",
+        "failed": "Failed"
+      },
+      "failed": "Extraction failed",
+      "unavailable": {
+        "title": "Extraction is not configured on this server",
+        "body": "Import a world JSON file or load an example into the project instead."
+      }
+    },
+    "summary": {
+      "entities": "World entities",
+      "entitiesNote": "Every typed entity in the world",
+      "agents": "Agent candidates",
+      "agentsNote": "Eligible actors only, counted separately",
+      "events": "Events",
+      "roles": "Roles",
+      "claims": "Claims"
+    },
+    "noWorld": {
+      "title": "No world yet",
+      "body": "Run extraction, import a world JSON file, or load an example into the project."
+    }
+  },
+  "step2": {
+    "actions": {
+      "heading": "Model",
+      "loadExampleModel": "Load example model",
+      "loadNamedExampleModel": "Load example model ({name})",
+      "importModel": "Import model JSON",
+      "importing": "Importing…",
+      "compile": "Compile",
+      "compiling": "Compiling…",
+      "needsProject": "These actions need the project from the server.",
+      "demo": "Offline example: importing and compiling need the server."
+    },
+    "imported": "Model imported: {variables} variables, {templates} templates, {kernels} kernels, {sources} sources.",
+    "variables": {
+      "heading": "Variables",
+      "registry": "Registry {version}",
+      "noRegistry": "No registry yet",
+      "empty": "No variables yet. Load or import a model.",
+      "columns": {
+        "id": "Variable",
+        "domains": "Domain by kind",
+        "units": "Units",
+        "ownership": "Ownership",
+        "missingness": "Missingness"
+      }
+    },
+    "mechanisms": {
+      "heading": "Mechanisms",
+      "empty": "No mechanisms yet. Load or import a model.",
+      "inputs": "Inputs (declared order)",
+      "output": "Output",
+      "kernelRef": "Kernel",
+      "parameterOrigin": "Parameter origin",
+      "validationStatus": "Validation status",
+      "disabled": "Disabled"
+    },
+    "compile": {
+      "heading": "Compile diagnostics",
+      "idle": "Compile the model to check it against the compiler's rules.",
+      "demo": "The offline example shows an already compiled plan.",
+      "ok": "Compiled. Model version",
+      "failed": "Compile failed | Compile failed with 1 error | Compile failed with {count} errors",
+      "noModel": "There is no model to compile. Load or import a model first.",
+      "severity": {
+        "error": "Error",
+        "warning": "Warning",
+        "info": "Info"
+      },
+      "chips": {
+        "mechanism": "mechanism",
+        "variable": "variable",
+        "port": "port"
+      }
+    },
+    "eligibility": {
+      "heading": "Agent eligibility",
+      "columns": {
+        "entity": "World entity",
+        "kind": "Kind",
+        "eligible": "Agent eligible",
+        "basis": "Basis"
+      },
+      "empty": "The world has no entities.",
+      "noBasis": "none",
+      "noWorld": {
+        "title": "No world yet",
+        "body": "Build the world in step 1 to see which entities may act as agents."
+      }
+    }
+  },
   "graph": {
     "modes": {
       "label": "Graph view",
@@ -232,7 +371,7 @@
       "mechanism": "Mechanism: {name}"
     },
     "example": {
-      "load": "Load example",
+      "load": "Preview bundled example",
       "badge": "Example data",
       "note": "Fictional illustration data bundled with the app; no server is needed."
     }

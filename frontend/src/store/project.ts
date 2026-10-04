@@ -1,5 +1,5 @@
 import { reactive, readonly } from "vue";
-import type { Project } from "../api/types";
+import type { CompileModelResponse, Project } from "../api/types";
 import { STEP_COUNT, STEP_NUMBERS, isStepNumber, type StepNumber } from "../process/steps";
 
 export interface ProjectStoreState {
@@ -8,10 +8,14 @@ export interface ProjectStoreState {
   currentStep: StepNumber;
   /** Sorted, without duplicates. */
   completedSteps: StepNumber[];
+  /** The server example loaded into this project's world (step 1), so step 2 can load the matching model. */
+  exampleName: string | null;
+  /** The most recent compile result for this project's current model (step 2). */
+  lastCompile: CompileModelResponse | null;
 }
 
 function initialState(): ProjectStoreState {
-  return { projectId: null, project: null, currentStep: 1, completedSteps: [] };
+  return { projectId: null, project: null, currentStep: 1, completedSteps: [], exampleName: null, lastCompile: null };
 }
 
 const state = reactive<ProjectStoreState>(initialState());
@@ -19,6 +23,8 @@ const state = reactive<ProjectStoreState>(initialState());
 function resetSteps(): void {
   state.currentStep = 1;
   state.completedSteps = [];
+  state.exampleName = null;
+  state.lastCompile = null;
 }
 
 function isCompleted(step: StepNumber): boolean {
@@ -66,6 +72,24 @@ export const projectStore = {
   markStepComplete(step: StepNumber): void {
     if (isCompleted(step)) return;
     state.completedSteps = [...state.completedSteps, step].sort((a, b) => a - b);
+  },
+
+  /**
+   * Withdraws a step's completion (for example when a recompile fails). Later
+   * steps keep their own completion but stay locked until this step completes
+   * again; the current step never moves.
+   */
+  markStepIncomplete(step: StepNumber): void {
+    if (!isCompleted(step)) return;
+    state.completedSteps = state.completedSteps.filter((s) => s !== step);
+  },
+
+  setExampleName(name: string | null): void {
+    state.exampleName = name;
+  },
+
+  setLastCompile(result: CompileModelResponse | null): void {
+    state.lastCompile = result;
   },
 
   /** Moves to `step` if it is reachable; returns whether it moved. */

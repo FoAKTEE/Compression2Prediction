@@ -17,7 +17,11 @@ export interface GraphSource<T> {
   isExample: Ref<boolean>;
   /** Whether the project record has loaded (so its server-side data can be fetched). */
   hasProject: Readonly<Ref<boolean>>;
+  /** The loaded project's ID, or `null` until the project record matches the route. */
+  projectId: Readonly<Ref<string | null>>;
   loadExample: () => void;
+  /** Leaves any bundled example and fetches the server's data again (after an import or a task). */
+  reload: () => Promise<void>;
 }
 
 /**
@@ -62,6 +66,12 @@ export function useGraphSource<T>(options: {
     data.value = options.example();
   }
 
+  async function reload(): Promise<void> {
+    isExample.value = false;
+    const id = projectId.value;
+    if (id !== null) await load(id);
+  }
+
   if (exampleRequested(route?.query)) loadExample();
 
   watch(
@@ -72,5 +82,5 @@ export function useGraphSource<T>(options: {
     { immediate: true },
   );
 
-  return { data, loading, error, isExample, hasProject, loadExample };
+  return { data, loading, error, isExample, hasProject, projectId, loadExample, reload };
 }

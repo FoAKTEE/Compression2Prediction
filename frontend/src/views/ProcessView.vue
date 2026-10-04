@@ -36,7 +36,11 @@ async function loadProject(projectId: string): Promise<void> {
   projectError.value = null;
   try {
     const project = await getProject(projectId);
-    if (props.projectId === projectId) projectStore.setProject(project);
+    if (props.projectId === projectId) {
+      projectStore.setProject(project);
+      // A world already exists for this project, so step 1 is complete.
+      if (project.world_version !== null) projectStore.markStepComplete(1);
+    }
   } catch (error) {
     if (props.projectId === projectId) projectError.value = error;
   } finally {
@@ -101,6 +105,10 @@ const hint = computed(() => {
 function markCurrentComplete(): void {
   projectStore.markStepComplete(state.currentStep);
 }
+
+function markCurrentIncomplete(): void {
+  projectStore.markStepIncomplete(state.currentStep);
+}
 </script>
 
 <template>
@@ -155,6 +163,7 @@ function markCurrentComplete(): void {
         :project-id="projectId"
         :completed="currentComplete"
         @complete="markCurrentComplete"
+        @incomplete="markCurrentIncomplete"
       />
     </section>
 

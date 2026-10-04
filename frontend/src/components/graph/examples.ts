@@ -8,7 +8,9 @@
  * input ports and one output.
  */
 import type {
+  EligibilityResponse,
   EventParticipation,
+  ListVariablesResponse,
   MechanismGraphResponse,
   Origin,
   RoleAssignmentRecord,
@@ -17,7 +19,7 @@ import type {
   WorldEntity,
   WorldResponse,
 } from "../../api/types";
-import { agentCandidates } from "./model";
+import { AGENT_KINDS, agentCandidates } from "./model";
 
 const ONTOLOGY_VERSION = "ontology.v1";
 const SELECTED = "explicit_synthetic_scenario_selection";
@@ -260,5 +262,55 @@ export function exampleMechanismGraph(): MechanismGraphResponse {
         outputs: [{ port: "next_status", key: key("incident_status", INCIDENT, 1) }],
       },
     ],
+  };
+}
+
+/** A fresh copy of the incident example's variable registry (each variable defined for one kind). */
+export function exampleVariables(): ListVariablesResponse {
+  const status = { name: "incident_status", values: ["unacknowledged", "acknowledged", "resolved"] };
+  return {
+    registry_version: "example.registry.v1",
+    variables: [
+      {
+        variable_id: "incident_status",
+        domain_by_kind: { Event: status },
+        units: "categorical",
+        missingness: "reject",
+        ownership: "endogenous",
+        observation_ref: null,
+      },
+      {
+        variable_id: "crew_capacity",
+        domain_by_kind: { Group: { name: "crew_capacity", values: ["baseline", "extra_crew"] } },
+        units: "categorical",
+        missingness: "reject",
+        ownership: "exogenous",
+        observation_ref: null,
+      },
+      {
+        variable_id: "supply_status",
+        domain_by_kind: { Location: { name: "supply_status", values: ["adequate", "short"] } },
+        units: "categorical",
+        missingness: "reject",
+        ownership: "exogenous",
+        observation_ref: null,
+      },
+    ],
+  };
+}
+
+/** Agent eligibility of the six-entity example world, as `GET .../eligibility` reports it. */
+export function exampleEligibility(): EligibilityResponse {
+  const entities = exampleWorld().entities.map((e) => ({
+    entity_id: e.entity_id,
+    display_name: e.display_name,
+    primary_kind: e.primary_kind,
+    agent_eligible: (AGENT_KINDS as readonly string[]).includes(e.primary_kind) && e.agent_eligible === true,
+    agent_eligibility_basis: e.agent_eligibility_basis,
+  }));
+  return {
+    world_entity_count: entities.length,
+    agent_candidate_count: entities.filter((e) => e.agent_eligible).length,
+    entities,
   };
 }
