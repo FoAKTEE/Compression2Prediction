@@ -193,7 +193,7 @@ $ cd reference/python && python3 -m pytest
 
 ### N2 — World schemas + registry
 
-- status: `in-progress`
+- status: `done`
 - depends: N0b, N1
 - substages: Python oracle done; TypeScript port pending. N2.1 records → N2.2
   validators (`world/records.py`, `world/validation.py`; registry in
@@ -218,6 +218,25 @@ $ python3 -m pytest   (N2.1 + N2.2 + N2.3 registry)
 55 passed in 0.46s
 $ python3 -m pytest tests/test_causal_registry.py
 5 passed in 0.05s
+```
+- TypeScript port verifier (run by the orchestrator; commit: the `feat(world)` TypeScript port):
+
+```text
+$ npx vitest run --project core
+ ✓ |core| packages/core/test/world.kinds.test.ts (8 tests) 17ms
+ ✓ |core| packages/core/test/causal.registry.test.ts (7 tests) 46ms
+ ✓ |core| packages/core/test/world.records.test.ts (36 tests) 46ms
+ ✓ |core| packages/core/test/store.records.test.ts (14 tests) 44ms
+ ✓ |core| packages/core/test/world.validation.test.ts (9 tests) 78ms
+ ✓ |core| packages/core/test/world.golden.test.ts (309 tests) 190ms
+ Test Files  14 passed (14)
+      Tests  790 passed (790)
+$ npx tsc -b -> exit 0
+$ npm run golden:check
+golden check: ok (7 files)
+$ cd reference/python && python3 -m pytest
+55 passed in 0.43s
+golden corpus world_verdicts.json: 307 cases (98 ok / 209 raises), verdict + normalized-output parity
 ```
 
 ### N3 — Artifact store & run dirs

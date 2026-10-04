@@ -24,3 +24,29 @@ export {
   UNIT,
 } from "./kernels.js";
 export type { Vector } from "./kernels.js";
+export {
+  asBool,
+  asFiniteFloat,
+  asHash,
+  asInt,
+  asLiteral,
+  asOptional,
+  asStr,
+  asStrTuple,
+  canonicalJson,
+  compareCodePoints,
+  contentHash,
+  HASH_FIELD,
+  isPlainObject,
+  Meta,
+  META_FIELDS,
+  ORIGINS,
+  recordPayload,
+  replaceRecord,
+  requireFields,
+  seal,
+  verifyHash,
+} from "./store/records.js";
+export type { EnvelopeFields, MetaFields, Origin, RecordClass } from "./store/records.js";
+export * from "./world/index.js";
+export * from "./causal/index.js";

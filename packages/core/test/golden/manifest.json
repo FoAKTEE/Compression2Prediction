@@ -29,6 +29,12 @@
       "file": "rational_cases.json",
       "oracle": "reference/python",
       "oracle_module": "fractions"
+    },
+    {
+      "description": "Accept/reject verdicts and normalized outputs for world records, validation, identity, conflicts, ontology, and the kind-indexed variable registry.",
+      "file": "world_verdicts.json",
+      "oracle": "reference/python",
+      "oracle_module": "c2p.world"
     }
   ],
   "generator": "reference/python/golden/generate.py"

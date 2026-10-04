@@ -1,7 +1,9 @@
-/** Shared helpers for golden tests: fixture loading and exact float.hex() handling. */
+/** Shared test helpers: golden fixture loading, exact float.hex() handling, ValueError checks. */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { expect } from "vitest";
+import { ValueError } from "../src/index.js";
 
 const goldenDir = fileURLToPath(new URL("./golden/", import.meta.url));
 
@@ -49,4 +51,16 @@ export function formatHexFloat(x: number): string {
   const digits = fraction.toString(16).padStart(13, "0");
   const e = biased === 0 ? -1022 : biased - 1023;
   return `${sign}0x${biased === 0 ? 0 : 1}.${digits}p${e < 0 ? "-" : "+"}${Math.abs(e)}`;
+}
+
+/** ``pytest.raises(ValueError, match=pattern)``: ``fn`` throws a ValueError whose message matches. */
+export function raises(fn: () => unknown, pattern?: RegExp): void {
+  let caught: unknown;
+  try {
+    fn();
+  } catch (error) {
+    caught = error;
+  }
+  expect(caught, "expected a ValueError").toBeInstanceOf(ValueError);
+  if (pattern !== undefined) expect((caught as Error).message).toMatch(pattern);
 }
