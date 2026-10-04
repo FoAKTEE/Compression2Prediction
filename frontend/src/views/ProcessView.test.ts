@@ -2,18 +2,18 @@ import { flushPromises, mount } from "@vue/test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { nextTick } from "vue";
 import type { Project } from "../api/types";
-import { getProject } from "../api/world";
+import { getProject, getWorld } from "../api/world";
 import { projectStore } from "../store/project";
 import { createTestPlugins, serverUnavailable } from "../test-support";
 import ProcessView from "./ProcessView.vue";
 
-vi.mock("../api/world", () => ({ getProject: vi.fn() }));
+vi.mock("../api/world", () => ({ getProject: vi.fn(), getWorld: vi.fn() }));
 
 const EN_LABELS = ["World build", "Model setup", "Forecast & simulate", "Report", "Interaction"];
 const ZH_LABELS = ["世界构建", "模型设置", "预测与模拟", "报告", "交互"];
 
-async function mountProcess(projectId = "p-1") {
-  const { i18n, plugins } = await createTestPlugins({ path: `/process/${projectId}` });
+async function mountProcess(projectId = "p-1", query = "") {
+  const { i18n, plugins } = await createTestPlugins({ path: `/process/${projectId}${query}` });
   const wrapper = mount(ProcessView, { props: { projectId }, global: { plugins: [...plugins] } });
   await flushPromises();
   return { wrapper, i18n };
@@ -29,6 +29,8 @@ beforeEach(() => {
   projectStore.reset();
   vi.mocked(getProject).mockReset();
   vi.mocked(getProject).mockRejectedValue(serverUnavailable());
+  vi.mocked(getWorld).mockReset();
+  vi.mocked(getWorld).mockRejectedValue(serverUnavailable());
 });
 
 describe("ProcessView", () => {
@@ -126,8 +128,31 @@ describe("ProcessView", () => {
     vi.mocked(getProject).mockResolvedValue(project);
     const { wrapper } = await mountProcess("p-1");
     expect(getProject).toHaveBeenCalledWith("p-1");
+    expect(getWorld).toHaveBeenCalledWith("p-1");
     expect(wrapper.get("h1").text()).toBe("Depot incident");
     expect(wrapper.text()).toContain("Is the incident resolved within two hours?");
     expect(wrapper.find("[data-testid='project-notice']").exists()).toBe(false);
+  });
+
+  it("with ?example=1 shows the example world graph in step 1 without a server", async () => {
+    const { wrapper } = await mountProcess("demo", "?example=1");
+    expect(currentPanelStep(wrapper)).toBe("1");
+    expect(wrapper.findAll("[data-testid='graph-node']")).toHaveLength(6);
+    expect(getWorld).not.toHaveBeenCalled();
+  });
+
+  it("with ?step=2&example=1 opens step 2 on the example mechanism graph", async () => {
+    const { wrapper } = await mountProcess("demo", "?step=2&example=1");
+    expect(currentPanelStep(wrapper)).toBe("2");
+    expect(projectStore.isCompleted(1)).toBe(true);
+    const types = wrapper.findAll("[data-testid='graph-node']").map((n) => n.attributes("data-node-type"));
+    expect(types.filter((type) => type === "variable")).toHaveLength(4);
+    expect(types.filter((type) => type === "mechanism")).toHaveLength(1);
+  });
+
+  it("ignores ?step without example=1, so step gating still holds", async () => {
+    const { wrapper } = await mountProcess("p-1", "?step=3");
+    expect(currentPanelStep(wrapper)).toBe("1");
+    expect(projectStore.isCompleted(1)).toBe(false);
   });
 });

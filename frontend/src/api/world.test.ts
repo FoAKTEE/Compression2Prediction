@@ -51,7 +51,15 @@ describe("world API", () => {
       claim_count: 4,
     };
     vi.spyOn(apiClient, "get").mockResolvedValue(
-      ok({ project_id: "p-1", world_version: "w1", entities: [], events: [], roles: [], claims: [], counts }),
+      ok({
+        project_id: "p-1",
+        world_version: "w1",
+        entities: [],
+        role_assignments: [],
+        participations: [],
+        claims: [],
+        counts,
+      }),
     );
     const world = await getWorld("p-1");
     expect(world.counts.world_entity_count).toBe(6);

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch, type Component } from "vue";
 import { useI18n } from "vue-i18n";
+import { useRoute } from "vue-router";
 import { getProject } from "../api/world";
 import StateNotice from "../components/StateNotice.vue";
 import Step1WorldBuild from "../components/steps/Step1WorldBuild.vue";
@@ -9,11 +10,13 @@ import Step3ForecastSimulate from "../components/steps/Step3ForecastSimulate.vue
 import Step4Report from "../components/steps/Step4Report.vue";
 import Step5Interaction from "../components/steps/Step5Interaction.vue";
 import { errorNotice } from "../composables/errorNotice";
-import { STEP_COUNT, STEP_KEYS, STEP_NUMBERS, padStep, type StepNumber } from "../process/steps";
+import { exampleRequested } from "../composables/graphSource";
+import { STEP_COUNT, STEP_KEYS, STEP_NUMBERS, isStepNumber, padStep, type StepNumber } from "../process/steps";
 import { projectStore } from "../store/project";
 
 const props = defineProps<{ projectId: string }>();
 const { t } = useI18n();
+const route = useRoute();
 
 const STEP_COMPONENTS: Readonly<Record<StepNumber, Component>> = {
   1: Step1WorldBuild,
@@ -46,6 +49,21 @@ watch(
   (projectId) => void loadProject(projectId),
   { immediate: true },
 );
+
+/**
+ * Demo links: with `?example=1`, `&step=N` opens step N directly, marking the
+ * earlier steps complete, so each step's bundled example can be viewed without
+ * a server. Without `example=1` the step gating is unchanged.
+ */
+function applyExampleStep(): void {
+  if (!exampleRequested(route?.query)) return;
+  const step = Number(route.query.step);
+  if (!isStepNumber(step)) return;
+  for (const earlier of STEP_NUMBERS) if (earlier < step) projectStore.markStepComplete(earlier);
+  projectStore.goToStep(step);
+}
+
+applyExampleStep();
 
 const project = computed(() => (state.project?.project_id === props.projectId ? state.project : null));
 const notice = computed(() => (projectError.value === null ? null : errorNotice(projectError.value, t)));

@@ -409,7 +409,7 @@ $ headless screenshots: Home 1280px, Process 1280px and 375px rendered; server-u
 
 ### N13 — GraphPanel
 
-- status: `pending`
+- status: `done`
 - depends: N12, N4 (types)
 - substages: shell (wave 2) → World and Mechanism views once N4 types exist
   (no memo §4.4 row)
@@ -417,10 +417,16 @@ $ headless screenshots: Home 1280px, Process 1280px and 375px rendered; server-u
   - component tests: variable and mechanism nodes never appear in agent lists
   - ports render in declared order
   - observed / extracted / assumed / simulated are visually distinct
-- commits:
-- verifier:
+- commits: the `feat(graph)` GraphPanel commit
+- verifier (run by the orchestrator):
 
 ```text
+$ npx vitest run --project frontend
+ Test Files  14 passed (14)
+      Tests  97 passed (97)
+$ npx vue-tsc --noEmit -p frontend   -> exit 0
+$ headless screenshots reviewed: world view (6 entities, 2 agent candidates, separate role/participation/claim layers), mechanism view (ports 0 status, 1 crew, 2 supplies; one output), 1280 and 375 px, light and dark
+note: some edge labels overlap in the world view (cosmetic, revisit in N14)
 ```
 
 ### N14 — Steps 1–5 + history

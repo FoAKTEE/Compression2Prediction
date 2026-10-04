@@ -5,6 +5,7 @@ import type {
   EligibilityResponse,
   ListMechanismsResponse,
   ListVariablesResponse,
+  MechanismGraphResponse,
   MechanismSpec,
 } from "./types";
 
@@ -18,6 +19,12 @@ export async function listVariables(projectId: string): Promise<ListVariablesRes
 export async function listMechanisms(projectId: string): Promise<MechanismSpec[]> {
   const { data } = await apiClient.get<ListMechanismsResponse>(`/model/projects/${seg(projectId)}/mechanisms`);
   return data.mechanisms;
+}
+
+/** `GET /api/model/projects/:projectId/mechanism-graph` (variable instances, mechanisms, port bindings). */
+export async function getMechanismGraph(projectId: string): Promise<MechanismGraphResponse> {
+  const { data } = await apiClient.get<MechanismGraphResponse>(`/model/projects/${seg(projectId)}/mechanism-graph`);
+  return data;
 }
 
 /** `POST /api/model/projects/:projectId/compile` returns compile diagnostics. */

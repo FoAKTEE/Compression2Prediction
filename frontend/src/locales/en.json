@@ -112,7 +112,129 @@
     },
     "graph": {
       "label": "World graph",
-      "placeholder": "The world graph panel will render here."
+      "noWorld": {
+        "title": "No world loaded",
+        "body": "Create a project with source documents and run extraction, or load the bundled example."
+      }
+    },
+    "mechanismGraph": {
+      "label": "Mechanism graph",
+      "noModel": {
+        "title": "No mechanism graph loaded",
+        "body": "Set up and compile a model for this project, or load the bundled incident example."
+      }
+    }
+  },
+  "graph": {
+    "modes": {
+      "label": "Graph view",
+      "world": "World",
+      "mechanism": "Mechanisms"
+    },
+    "layers": {
+      "label": "Edge layers",
+      "roles": "Roles",
+      "participation": "Event participation",
+      "claims": "Claims"
+    },
+    "canvas": "{view} graph: {nodes} nodes, {edges} edges",
+    "zoom": {
+      "in": "Zoom in",
+      "out": "Zoom out",
+      "reset": "Reset view",
+      "hint": "Drag to pan. Ctrl or ⌘ + scroll to zoom."
+    },
+    "loading": "Loading graph…",
+    "empty": {
+      "world": {
+        "title": "No world entities",
+        "body": "This view shows world entities once a world is loaded."
+      },
+      "mechanism": {
+        "title": "No mechanism graph",
+        "body": "This view shows variable instances and mechanisms once a model is loaded."
+      }
+    },
+    "invalid": {
+      "title": "The mechanism graph cannot be drawn"
+    },
+    "legend": {
+      "label": "Legend",
+      "kinds": "Kinds",
+      "nodes": "Nodes",
+      "origins": "Origins",
+      "edges": "Edges",
+      "variable": "Variable instance",
+      "mechanism": "Mechanism",
+      "roleEdge": "Role (holder → scope)",
+      "participationEdge": "Participation (participant → event)",
+      "claimEdge": "Claim (knowledge graph)",
+      "inputEdge": "Input port (declared order)",
+      "outputEdge": "Output (exactly one)"
+    },
+    "kinds": {
+      "Person": "Person",
+      "Organization": "Organization",
+      "Group": "Group",
+      "Event": "Event",
+      "Location": "Location",
+      "Artifact": "Artifact",
+      "Resource": "Resource",
+      "Topic": "Topic"
+    },
+    "origins": {
+      "observed": "Observed",
+      "extracted": "Extracted",
+      "assumed": "Assumed",
+      "simulated": "Simulated"
+    },
+    "agents": {
+      "heading": "Agent candidates",
+      "worldEntities": "World entities",
+      "candidates": "Agent candidates",
+      "rule": "An entity is a candidate only when its kind is Person, Organization, or Group and agent_eligible is true.",
+      "none": "No entity is an agent candidate."
+    },
+    "detail": {
+      "heading": "Details",
+      "hint": "Select a node to see its details: click it, or focus it and press Enter.",
+      "clear": "Clear selection",
+      "types": {
+        "entity": "World entity",
+        "variable": "Variable instance",
+        "mechanism": "Mechanism"
+      },
+      "id": "ID",
+      "kind": "Kind",
+      "subtypes": "Subtypes",
+      "none": "None",
+      "roles": "Roles",
+      "origin": "Origin",
+      "evidence": "Evidence",
+      "evidenceCount": "No evidence records | 1 evidence record | {count} evidence records",
+      "agentCandidate": "Agent candidate",
+      "yes": "Yes",
+      "no": "No",
+      "family": "Family",
+      "inputs": "Inputs (declared order)",
+      "output": "Output",
+      "kernelRef": "Kernel",
+      "causalBasis": "Causal basis",
+      "parameterOrigin": "Parameter origin",
+      "validationStatus": "Validation status",
+      "key": "Key",
+      "domain": "Domain",
+      "roleIn": "{role} in {scope}"
+    },
+    "nodeLabel": {
+      "entity": "{kind}: {name}",
+      "variable": "Variable instance: {name}",
+      "mechanism": "Mechanism: {name}"
+    },
+    "example": {
+      "load": "Load example",
+      "badge": "Example data",
+      "note": "Fictional illustration data bundled with the app; no server is needed."
     }
   },
   "report": {

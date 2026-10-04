@@ -19,6 +19,16 @@
   --c2p-warning: #8a5a00;
   --c2p-warning-surface: #fbf4e4;
 
+  /* World kinds (graph glyph fills). Each kind also has its own shape, so color is never the only cue. */
+  --c2p-kind-person: #2a78d6;
+  --c2p-kind-organization: #eb6834;
+  --c2p-kind-group: #1baf7a;
+  --c2p-kind-event: #eda100;
+  --c2p-kind-location: #e87ba4;
+  --c2p-kind-artifact: #008300;
+  --c2p-kind-resource: #4a3aa7;
+  --c2p-kind-topic: #e34948;
+
   /* Type */
   --c2p-font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", "PingFang SC",
     "Noto Sans SC", "Microsoft YaHei", sans-serif;
@@ -69,5 +79,14 @@
     --c2p-success: #7fd19b;
     --c2p-warning: #f0c060;
     --c2p-warning-surface: #2a2212;
+
+    --c2p-kind-person: #3987e5;
+    --c2p-kind-organization: #d95926;
+    --c2p-kind-group: #199e70;
+    --c2p-kind-event: #c98500;
+    --c2p-kind-location: #d55181;
+    --c2p-kind-artifact: #008300;
+    --c2p-kind-resource: #9085e9;
+    --c2p-kind-topic: #e66767;
   }
 }

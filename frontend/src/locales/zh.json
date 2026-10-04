@@ -112,7 +112,129 @@
     },
     "graph": {
       "label": "世界图",
-      "placeholder": "世界图面板将在此处呈现。"
+      "noWorld": {
+        "title": "尚未加载世界",
+        "body": "创建带有源文档的项目并运行抽取，或加载内置示例。"
+      }
+    },
+    "mechanismGraph": {
+      "label": "机制图",
+      "noModel": {
+        "title": "尚未加载机制图",
+        "body": "为该项目设置并编译模型，或加载内置的事故示例。"
+      }
+    }
+  },
+  "graph": {
+    "modes": {
+      "label": "图视图",
+      "world": "世界",
+      "mechanism": "机制"
+    },
+    "layers": {
+      "label": "边图层",
+      "roles": "角色",
+      "participation": "事件参与",
+      "claims": "断言"
+    },
+    "canvas": "{view}图：{nodes} 个节点，{edges} 条边",
+    "zoom": {
+      "in": "放大",
+      "out": "缩小",
+      "reset": "重置视图",
+      "hint": "拖动以平移。按住 Ctrl 或 ⌘ 并滚动以缩放。"
+    },
+    "loading": "正在加载图…",
+    "empty": {
+      "world": {
+        "title": "没有世界实体",
+        "body": "加载世界后，此视图将显示世界实体。"
+      },
+      "mechanism": {
+        "title": "没有机制图",
+        "body": "加载模型后，此视图将显示变量实例与机制。"
+      }
+    },
+    "invalid": {
+      "title": "无法绘制机制图"
+    },
+    "legend": {
+      "label": "图例",
+      "kinds": "类别",
+      "nodes": "节点",
+      "origins": "来源",
+      "edges": "边",
+      "variable": "变量实例",
+      "mechanism": "机制",
+      "roleEdge": "角色（持有者 → 范围）",
+      "participationEdge": "参与（参与者 → 事件）",
+      "claimEdge": "断言（知识图）",
+      "inputEdge": "输入端口（按声明顺序）",
+      "outputEdge": "输出（恰好一个）"
+    },
+    "kinds": {
+      "Person": "人物",
+      "Organization": "组织",
+      "Group": "群体",
+      "Event": "事件",
+      "Location": "地点",
+      "Artifact": "制品",
+      "Resource": "资源",
+      "Topic": "主题"
+    },
+    "origins": {
+      "observed": "观测",
+      "extracted": "抽取",
+      "assumed": "假设",
+      "simulated": "模拟"
+    },
+    "agents": {
+      "heading": "智能体候选",
+      "worldEntities": "世界实体",
+      "candidates": "智能体候选",
+      "rule": "仅当实体类别为 Person、Organization 或 Group 且 agent_eligible 为 true 时，才是候选。",
+      "none": "没有实体是智能体候选。"
+    },
+    "detail": {
+      "heading": "详情",
+      "hint": "选择一个节点以查看详情：点击它，或聚焦后按 Enter。",
+      "clear": "清除选择",
+      "types": {
+        "entity": "世界实体",
+        "variable": "变量实例",
+        "mechanism": "机制"
+      },
+      "id": "ID",
+      "kind": "类别",
+      "subtypes": "子类型",
+      "none": "无",
+      "roles": "角色",
+      "origin": "来源",
+      "evidence": "证据",
+      "evidenceCount": "没有证据记录 | 1 条证据记录 | {count} 条证据记录",
+      "agentCandidate": "智能体候选",
+      "yes": "是",
+      "no": "否",
+      "family": "族",
+      "inputs": "输入（按声明顺序）",
+      "output": "输出",
+      "kernelRef": "核",
+      "causalBasis": "因果依据",
+      "parameterOrigin": "参数来源",
+      "validationStatus": "验证状态",
+      "key": "键",
+      "domain": "取值域",
+      "roleIn": "{scope} 中的 {role}"
+    },
+    "nodeLabel": {
+      "entity": "{kind}：{name}",
+      "variable": "变量实例：{name}",
+      "mechanism": "机制：{name}"
+    },
+    "example": {
+      "load": "加载示例",
+      "badge": "示例数据",
+      "note": "随应用附带的虚构示例数据，无需服务器。"
     }
   },
   "report": {
