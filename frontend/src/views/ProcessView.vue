@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, ref, watch, type Component } from "vue";
+import { computed, ref, watch, type Component, type DeepReadonly } from "vue";
 import { useI18n } from "vue-i18n";
 import { useRoute } from "vue-router";
+import type { Project } from "../api/types";
 import { getProject } from "../api/world";
 import StateNotice from "../components/StateNotice.vue";
 import Step1WorldBuild from "../components/steps/Step1WorldBuild.vue";
@@ -27,6 +28,8 @@ const STEP_COMPONENTS: Readonly<Record<StepNumber, Component>> = {
 };
 
 const state = projectStore.state;
+/** The offline walkthrough (`?example=1`) has no server record to follow. */
+const demo = exampleRequested(route?.query);
 const projectLoading = ref(false);
 const projectError = ref<unknown>(null);
 
@@ -38,8 +41,7 @@ async function loadProject(projectId: string): Promise<void> {
     const project = await getProject(projectId);
     if (props.projectId === projectId) {
       projectStore.setProject(project);
-      // A world already exists for this project, so step 1 is complete.
-      if (project.world_version !== null) projectStore.markStepComplete(1);
+      applyServerProgress(project);
     }
   } catch (error) {
     if (props.projectId === projectId) projectError.value = error;
@@ -55,12 +57,37 @@ watch(
 );
 
 /**
+ * Step completion derives from the server's project record whenever it
+ * arrives: world → step 1, a successful compile of the current model → step 2,
+ * a run → step 3, a report → step 4. A world re-import that clears the model
+ * withdraws steps 2-4.
+ */
+function applyServerProgress(project: Project | DeepReadonly<Project> | null): void {
+  if (!demo && project !== null && project.project_id === props.projectId) projectStore.syncFromProject(project);
+}
+
+watch(() => projectStore.state.project, applyServerProgress, { immediate: true });
+
+/** After a step changed server state (an import, a compile, a forecast), fetch the project record again. */
+async function refreshProject(): Promise<void> {
+  const projectId = props.projectId;
+  try {
+    const project = await getProject(projectId);
+    if (props.projectId !== projectId) return;
+    projectStore.setProject(project);
+    applyServerProgress(project);
+  } catch {
+    // The step already shows its own result; the gating catches up on the next load.
+  }
+}
+
+/**
  * Demo links: with `?example=1`, `&step=N` opens step N directly, marking the
  * earlier steps complete, so each step's bundled example can be viewed without
  * a server. Without `example=1` the step gating is unchanged.
  */
 function applyExampleStep(): void {
-  if (!exampleRequested(route?.query)) return;
+  if (!demo) return;
   const step = Number(route.query.step);
   if (!isStepNumber(step)) return;
   for (const earlier of STEP_NUMBERS) if (earlier < step) projectStore.markStepComplete(earlier);
@@ -164,6 +191,7 @@ function markCurrentIncomplete(): void {
         :completed="currentComplete"
         @complete="markCurrentComplete"
         @incomplete="markCurrentIncomplete"
+        @refresh-project="refreshProject"
       />
     </section>
 

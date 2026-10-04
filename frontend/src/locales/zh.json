@@ -6,8 +6,14 @@
   },
   "language": {
     "label": "语言",
-    "en": { "short": "EN", "name": "English" },
-    "zh": { "short": "中文", "name": "中文" }
+    "en": {
+      "short": "EN",
+      "name": "English"
+    },
+    "zh": {
+      "short": "中文",
+      "name": "中文"
+    }
   },
   "common": {
     "loading": "加载中…",
@@ -379,14 +385,293 @@
   "report": {
     "title": "报告",
     "idLabel": "报告",
-    "description": "单份报告的预测分布、基线与干预的对比以及验证状态。",
-    "placeholder": "报告内容将随第 4 步的实现一并提供。"
+    "description": "一份报告的按预测步分布、基线与干预的对比、服务器给出的陈述、假设以及验证状态。",
+    "backToProject": "项目",
+    "notExample": "离线示例中没有此 ID 的报告。"
   },
   "interaction": {
     "title": "交互",
     "idLabel": "报告",
-    "description": "针对单份报告的假设性查询、机制检查器以及排序与影响力视图。",
-    "placeholder": "交互工具将随第 5 步的实现一并提供。"
+    "description": "针对此报告所属项目的假设分析重跑、运行比较、机制检查器以及排序与影响诊断。",
+    "openReport": "打开报告"
+  },
+  "forecast": {
+    "none": "无",
+    "series": {
+      "baseline": "基线（{scenario}）",
+      "intervention": "干预（{scenario}）"
+    },
+    "effect": {
+      "model_based_intervention": "基于模型的干预",
+      "not_applicable": "观测性预测（无干预）",
+      "note": "通过对所述模型做手术计算：被干预的输入固定在指定取值，其余机制保持不变。这是基于模型的结果，而不是由数据识别出的效应。"
+    },
+    "queryKind": {
+      "observational": "观测性",
+      "interventional": "干预性"
+    },
+    "runStatus": {
+      "pending": "排队中",
+      "running": "运行中",
+      "completed": "已完成",
+      "failed": "失败"
+    },
+    "chart": {
+      "title": "{entity} 的 {variable}：按预测步的分布",
+      "step": "第 {step} 步",
+      "stepMinutes": "第 {step} 步（t + {minutes} 分钟）",
+      "axis": "概率，固定坐标轴 0–100%",
+      "legend": "序列",
+      "table": "以表格显示数值",
+      "tableStep": "步",
+      "tableOutcome": "结果",
+      "summary": "每个结果的概率，固定坐标轴 0 到 100%，每个预测步一个面板。",
+      "summaryStep": "{step}：{values}。",
+      "summarySeries": "{series}：{values}"
+    },
+    "form": {
+      "targetEntity": "目标实体",
+      "targetVariable": "目标变量",
+      "ownership": {
+        "endogenous": "结果（内生）",
+        "exogenous": "输入（外生）"
+      },
+      "horizon": "预测步数",
+      "horizonRange": "1 到 {max}（模型的预测范围）",
+      "horizonUnknown": "预测范围由服务器限定。",
+      "scenario": "情景 ID",
+      "scenarioPlaceholder": "服务器默认",
+      "interventions": "硬干预",
+      "rules": {
+        "input": "干预把一个输入变量固定为其取值域中的一个值。它设定输入，绝不设定被预测的结果。",
+        "window": "每个窗口都是左闭右开区间 [start, end)：取值作用于从 start→start+1 到 end−1→end 的各次转移。end 必须大于 start，且不超过预测步数。",
+        "unavailable": "机制替换和策略替换尚不可用；只运行硬赋值。"
+      },
+      "dropped": "以下干预无法在此编辑，已从请求中略去：{kinds}。",
+      "hard": "硬赋值 {n}",
+      "remove": "移除",
+      "ivVariable": "变量",
+      "ivEntity": "实体",
+      "ivValue": "取值",
+      "chooseValue": "选择取值",
+      "notInDomain": "{value}（不在取值域内）",
+      "start": "起始步",
+      "end": "结束步（不含）",
+      "transitions": "作用于 {list}",
+      "noInterventions": "没有干预：该请求是观测性预测。",
+      "add": "添加硬干预",
+      "submit": "运行预测",
+      "running": "运行中…",
+      "errors": {
+        "target": "请选择目标实体和变量。",
+        "targetKind": "该变量没有为此实体的类型注册。",
+        "horizon": "预测步数必须是不小于 1 的整数。",
+        "horizonMax": "预测步数不能超过模型的预测范围 {max}。",
+        "scenario": "请使用字母、数字、点、下划线或连字符，并以字母或数字开头。",
+        "variable": "请选择模型中已注册的变量。",
+        "outcome": "这会直接设定预测目标本身。请改为干预一个输入。",
+        "entity": "请选择类型具有该变量的实体。",
+        "value": "请从取值域中选择一个值。",
+        "outOfDomain": "{value} 不在该变量对此实体类型的取值域内。",
+        "windowInteger": "起始和结束必须是整数，且起始不小于 0。",
+        "windowInverted": "结束（{end}）必须大于起始（{start}）：窗口 [start, end) 是左闭右开区间。",
+        "windowHorizon": "结束（{end}）不能超过预测步数（{horizon}）。",
+        "blocked": "请修正标出的字段；没有发送任何请求。"
+      }
+    },
+    "uncertainty": {
+      "heading": "不确定性",
+      "parameter": "参数不确定性",
+      "modelError": "模型误差",
+      "method": "方法",
+      "noInterval": "不绘制区间：由假定核精确计算的结果没有经测量的离散程度，零宽度的区间会夸大确定性。"
+    },
+    "provenance": {
+      "heading": "来源",
+      "dataOrigin": "数据来源",
+      "parameterOrigin": "参数来源",
+      "validationStatus": "验证状态",
+      "mechanism": "机制",
+      "kernel": "核",
+      "fittingMethod": "拟合方法",
+      "trainingCutoff": "训练截止时间",
+      "causalBasis": "因果依据"
+    },
+    "result": {
+      "openReport": "打开报告",
+      "held": "固定",
+      "references": "精确引用",
+      "scopeScenario": "查询的情景",
+      "cutoff": "信息截止时间",
+      "initialBelief": "初始信念",
+      "conditioning": "条件化",
+      "modelVersion": "模型版本",
+      "worldVersion": "世界版本",
+      "repoSha": "仓库 SHA"
+    },
+    "runs": {
+      "target": "{variable} · {entity} · {steps} 步",
+      "report": "报告"
+    },
+    "errors": {
+      "notCompiled": "模型尚未编译。请在步骤 2 中编译，然后再运行预测。",
+      "rejected": "服务器拒绝了此预测请求",
+      "notImplemented": "此服务器不支持",
+      "conflict": "发送请求期间项目已变更（冲突）"
+    }
+  },
+  "step3": {
+    "request": {
+      "heading": "预测请求",
+      "model": "模型 {version} · 预测范围 {horizon}",
+      "demo": "离线示例：表单中是指南中的干预请求（在 [0, 2) 内将人员容量保持为高）。没有服务器时，只有该请求和普通基线有结果。",
+      "noModel": "尚无模型。请在步骤 2 中导入并编译模型。",
+      "stalePlan": "上一次编译失败，因此预测使用最近一次成功编译的计划。"
+    },
+    "demoMiss": {
+      "title": "该请求没有内置结果",
+      "body": "离线示例只包含指南中的干预请求和普通基线的结果。启动服务器以运行其他请求。"
+    },
+    "runs": {
+      "heading": "运行",
+      "count": "没有运行 | 1 次运行 | {count} 次运行",
+      "empty": "尚无运行。请提交一个预测请求。"
+    },
+    "selected": {
+      "heading": "所选运行",
+      "empty": "请选择一次运行，或提交一个预测请求。"
+    }
+  },
+  "step4": {
+    "heading": "报告",
+    "pick": "要显示的报告",
+    "openStandalone": "作为页面打开",
+    "openInteraction": "打开交互视图",
+    "unknownExample": "离线示例中没有报告 {id}。",
+    "empty": {
+      "title": "尚无报告",
+      "body": "每次预测运行都会生成一份报告。请在步骤 3 中运行预测。"
+    }
+  },
+  "step5": {
+    "run": {
+      "heading": "运行",
+      "label": "要使用的运行",
+      "empty": "尚无运行。请在步骤 3 中运行预测。"
+    },
+    "whatif": {
+      "heading": "假设分析",
+      "intro": "用修改后的干预重新运行所选运行的请求。结果是同一模型的一次新运行。",
+      "submit": "运行假设分析"
+    },
+    "compare": {
+      "heading": "比较运行",
+      "runA": "运行 A",
+      "runB": "运行 B",
+      "step": "预测步",
+      "seriesA": "运行 A（{scenario}）",
+      "seriesB": "运行 B（{scenario}）",
+      "chartTitle": "第 {step} 步时 {entity} 的 {variable}：两次运行",
+      "caption": "第 {step} 步时两次模型运行之间的差值（B − A，单位为百分点）。两次运行都是所述模型的输出。",
+      "difference": "B − A",
+      "needTwo": "比较至少需要两次运行。",
+      "same": "请选择两次不同的运行。",
+      "mismatch": "这两次运行预测的目标不同。请选择变量和实体相同的两次运行。"
+    },
+    "inspector": {
+      "heading": "机制检查器",
+      "empty": "尚无机制图。请在步骤 2 中编译模型。"
+    },
+    "rank": {
+      "heading": "排序与影响",
+      "idle": "选择一次运行以查看其诊断。",
+      "disabled": {
+        "title": "此服务器尚未启用排序诊断",
+        "body": "服务器对此运行返回了 501。预测和报告不受影响。"
+      },
+      "demo": {
+        "title": "离线示例",
+        "body": "排序诊断来自服务器；离线示例中没有。"
+      },
+      "method": "方法",
+      "hashes": "核哈希",
+      "unchanged": "未因排序而改变",
+      "changed": "已改变（排序绝不应改变核）",
+      "node": "节点",
+      "kind": "类型",
+      "score": "得分",
+      "bound": "影响上界",
+      "sampled": "仅有抽样估计",
+      "prunable": "可认证剪枝"
+    }
+  },
+  "reportBody": {
+    "eyebrow": "报告",
+    "title": "{entity} 的 {variable}",
+    "facts": {
+      "target": "目标",
+      "horizon": "预测范围",
+      "horizonSteps": "{steps} 步",
+      "horizonMinutes": "{steps} 步，每步 {minutes} 分钟",
+      "cutoff": "信息截止时间",
+      "origin": "数据来源",
+      "modelVersion": "模型版本",
+      "validationStatus": "验证状态",
+      "uncertaintyMethod": "不确定性方法",
+      "run": "运行",
+      "created": "创建时间"
+    },
+    "statements": {
+      "heading": "陈述",
+      "verbatim": "按服务器原文显示。每条陈述描述的是此模型中的概率质量，而不是关于真实世界的概率。",
+      "none": "此报告没有陈述。",
+      "kind": {
+        "distribution": "分布",
+        "comparison": "比较"
+      }
+    },
+    "distributions": "按预测步的分布",
+    "metrics": {
+      "heading": "验证指标",
+      "nll": "NLL（比特）",
+      "brier": "Brier 分数",
+      "calibration": "校准（ECE）",
+      "parameterUncertainty": "参数不确定性",
+      "modelError": "模型误差",
+      "impossible": "一个观测到的结果被赋予了零概率。",
+      "predicted": "预测",
+      "observed": "观测",
+      "count": "数量",
+      "note": "未测量的指标显示为“缺失”（例如没有回测时）；绝不显示为 0。"
+    },
+    "assumptions": {
+      "heading": "假设",
+      "causalBasis": "因果依据",
+      "kernels": "核",
+      "priors": "先验（初始信念）",
+      "key": "键",
+      "distribution": "分布（按取值域顺序）",
+      "origin": "来源",
+      "interventions": "干预",
+      "noInterventions": "无：观测性预测。",
+      "notes": "说明",
+      "none": "此报告未列出假设。"
+    },
+    "sourceBacked": {
+      "heading": "有来源支持的观测",
+      "evidence": "证据记录",
+      "claims": "断言",
+      "note": "与上述假设分开计数：这些记录来自资料来源，而假设不是。"
+    }
+  },
+  "history": {
+    "show": "运行与报告",
+    "hide": "隐藏运行与报告",
+    "runs": "没有运行 | 1 次运行 | {count} 次运行",
+    "reports": "没有报告 | 1 份报告 | {count} 份报告",
+    "noRuns": "尚无运行。",
+    "noReports": "尚无报告。",
+    "interact": "交互"
   },
   "notFound": {
     "code": "404",

@@ -2,10 +2,12 @@ import { UPLOAD_TIMEOUT_MS, apiClient, seg } from "./client";
 import type {
   CreateProjectRequest,
   ListProjectsResponse,
+  ListTasksResponse,
   Project,
   ProjectSummary,
   StartExtractionResponse,
   Task,
+  TaskFilter,
   WorldImport,
   WorldResponse,
 } from "./types";
@@ -63,4 +65,18 @@ export async function importWorld(projectId: string, body: WorldImport): Promise
     timeout: UPLOAD_TIMEOUT_MS,
   });
   return data;
+}
+
+/**
+ * `GET /api/world/projects/:projectId/tasks?kind=&status=`: the project's
+ * persisted tasks, newest first (used to resume polling an extraction after a reload).
+ */
+export async function listProjectTasks(projectId: string, filter: TaskFilter = {}): Promise<Task[]> {
+  const params: Record<string, string> = {};
+  if (filter.kind !== undefined) params.kind = filter.kind;
+  if (filter.status !== undefined) {
+    params.status = Array.isArray(filter.status) ? filter.status.join(",") : filter.status;
+  }
+  const { data } = await apiClient.get<ListTasksResponse>(`/world/projects/${seg(projectId)}/tasks`, { params });
+  return data.tasks;
 }

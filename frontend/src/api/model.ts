@@ -3,6 +3,7 @@ import type {
   CompileModelRequest,
   CompileModelResponse,
   EligibilityResponse,
+  ModelResponse,
   ImportModelResponse,
   ListMechanismsResponse,
   ListVariablesResponse,
@@ -54,5 +55,15 @@ export async function importModel(projectId: string, body: ModelImport): Promise
   const { data } = await apiClient.put<ImportModelResponse>(`/model/projects/${seg(projectId)}/model`, body, {
     timeout: UPLOAD_TIMEOUT_MS,
   });
+  return data;
+}
+
+/**
+ * `GET /api/model/projects/:projectId/model`: the stored model import (registry,
+ * templates, kernels, horizon, initial beliefs) with `model_version` and the
+ * `world_version` it was validated against. Rejects with 404 `model_not_found`.
+ */
+export async function getModel(projectId: string): Promise<ModelResponse> {
+  const { data } = await apiClient.get<ModelResponse>(`/model/projects/${seg(projectId)}/model`);
   return data;
 }

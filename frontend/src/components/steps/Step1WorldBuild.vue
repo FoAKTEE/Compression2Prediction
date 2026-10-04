@@ -6,7 +6,7 @@ import { normalizeError } from "../../api/client";
 import { getExample } from "../../api/examples";
 import { pollTask } from "../../api/tasks";
 import type { Task, WorldImport } from "../../api/types";
-import { getProject, getWorld, importWorld, startExtraction } from "../../api/world";
+import { getProject, getWorld, importWorld, listProjectTasks, startExtraction } from "../../api/world";
 import { errorNotice, type ErrorNoticeContent } from "../../composables/errorNotice";
 import { exampleRequested, useGraphSource } from "../../composables/graphSource";
 import { importFailure, readJsonObject, type ImportFailure } from "../../composables/importFailure";
@@ -19,7 +19,7 @@ import ExamplePicker from "./ExamplePicker.vue";
 import StepPanel from "./StepPanel.vue";
 
 const props = defineProps<{ projectId: string; completed: boolean }>();
-const emit = defineEmits<{ complete: [] }>();
+const emit = defineEmits<{ complete: []; "refresh-project": [] }>();
 const { t, locale } = useI18n();
 const route = useRoute();
 
@@ -28,6 +28,8 @@ const demo = exampleRequested(route?.query);
 
 /** Extraction can take minutes: poll once a second for up to ten minutes. */
 const EXTRACTION_POLL = { intervalMs: 1_000, maxAttempts: 600 } as const;
+/** The server's task kind for world extraction. */
+const EXTRACTION_TASK_KIND = "world_extraction";
 
 const { data, loading, error, isExample, projectId, loadExample, reload } = useGraphSource({
   projectId: () => props.projectId,
@@ -91,15 +93,18 @@ async function refresh(id: string): Promise<void> {
   }
 }
 
-async function runExtraction(): Promise<void> {
-  const id = projectId.value;
-  if (id === null || busy.value !== null) return;
-  clearMessages();
+function onExtractionError(caught: unknown): void {
+  const failure = normalizeError(caught);
+  if (failure.code === "canceled") return;
+  if (failure.status === 501 || failure.code === "not_implemented") extractionUnavailable.value = true;
+  else actionNotice.value = errorNotice(failure, t);
+}
+
+/** Polls an extraction task to its end, then shows the new world or the failure. */
+async function followExtraction(id: string, started: Task): Promise<void> {
   busy.value = "extraction";
-  task.value = null;
+  task.value = started;
   try {
-    const started = await startExtraction(id);
-    task.value = started;
     poller = new AbortController();
     const finished = await pollTask(started.task_id, {
       ...EXTRACTION_POLL,
@@ -119,16 +124,60 @@ async function runExtraction(): Promise<void> {
       };
     }
   } catch (caught) {
-    if (unmounted) return;
-    const failure = normalizeError(caught);
-    if (failure.code === "canceled") return;
-    if (failure.status === 501 || failure.code === "not_implemented") extractionUnavailable.value = true;
-    else actionNotice.value = errorNotice(failure, t);
+    if (!unmounted) onExtractionError(caught);
   } finally {
     poller = null;
     if (!unmounted) busy.value = null;
   }
 }
+
+async function runExtraction(): Promise<void> {
+  const id = projectId.value;
+  if (id === null || busy.value !== null) return;
+  clearMessages();
+  busy.value = "extraction";
+  task.value = null;
+  let started: Task;
+  try {
+    started = await startExtraction(id);
+  } catch (caught) {
+    if (!unmounted) {
+      onExtractionError(caught);
+      busy.value = null;
+    }
+    return;
+  }
+  if (unmounted) return;
+  await followExtraction(id, started);
+}
+
+/**
+ * After a reload, an extraction may still be pending or running on the
+ * server: find it in the project's task listing and keep polling it. A server
+ * without the listing (or any failure) just leaves the step idle.
+ */
+async function resumeExtraction(id: string): Promise<void> {
+  if (demo) return;
+  let tasks: Task[] | undefined;
+  try {
+    tasks = await listProjectTasks(id, { kind: EXTRACTION_TASK_KIND, status: ["pending", "running"] });
+  } catch {
+    return;
+  }
+  if (unmounted || projectId.value !== id || busy.value !== null) return;
+  const active = (tasks ?? []).find(
+    (candidate) => candidate.kind === EXTRACTION_TASK_KIND && (candidate.status === "pending" || candidate.status === "running"),
+  );
+  if (active) await followExtraction(id, active);
+}
+
+watch(
+  projectId,
+  (id) => {
+    if (id !== null) void resumeExtraction(id);
+  },
+  { immediate: true },
+);
 
 /** PUTs a world bundle; the server's 422/409/413 messages are shown inline. Returns whether it was stored. */
 async function putWorld(body: WorldImport, action: Action, exampleName: string | null): Promise<boolean> {

@@ -2,15 +2,30 @@ import { enableAutoUnmount, flushPromises, mount } from "@vue/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { nextTick } from "vue";
 import { ApiError } from "../api/client";
-import { compileModel, getEligibility, getMechanismGraph, listMechanisms, listVariables } from "../api/model";
+import { getRankDiagnostics, getRun, listRuns, runForecast } from "../api/forecast";
+import { compileModel, getEligibility, getMechanismGraph, getModel, listMechanisms, listVariables } from "../api/model";
+import { getProjectReport, getReport, listReports } from "../api/report";
 import type { CompileModelResponse, Project } from "../api/types";
-import { getProject, getWorld } from "../api/world";
+import { getProject, getWorld, importWorld, listProjectTasks } from "../api/world";
+import {
+  EXAMPLE_INTERVENTION_REPORT_ID,
+  EXAMPLE_INTERVENTION_RUN_ID,
+  exampleReport,
+  exampleRunResult,
+  exampleRunSummaries,
+} from "../components/forecast/examples";
 import { exampleEligibility, exampleMechanismGraph, exampleWorld } from "../components/graph/examples";
 import { projectStore } from "../store/project";
 import { createTestPlugins, serverUnavailable } from "../test-support";
 import ProcessView from "./ProcessView.vue";
 
-vi.mock("../api/world", () => ({ getProject: vi.fn(), getWorld: vi.fn() }));
+vi.mock("../api/world", () => ({
+  getProject: vi.fn(),
+  getWorld: vi.fn(),
+  importWorld: vi.fn(),
+  startExtraction: vi.fn(),
+  listProjectTasks: vi.fn(),
+}));
 vi.mock("../api/model", () => ({
   getMechanismGraph: vi.fn(),
   listVariables: vi.fn(),
@@ -18,7 +33,10 @@ vi.mock("../api/model", () => ({
   getEligibility: vi.fn(),
   compileModel: vi.fn(),
   importModel: vi.fn(),
+  getModel: vi.fn(),
 }));
+vi.mock("../api/forecast", () => ({ runForecast: vi.fn(), listRuns: vi.fn(), getRun: vi.fn(), getRankDiagnostics: vi.fn() }));
+vi.mock("../api/report", () => ({ getReport: vi.fn(), getProjectReport: vi.fn(), listReports: vi.fn() }));
 
 const PROJECT: Project = {
   project_id: "p-1",
@@ -29,6 +47,11 @@ const PROJECT: Project = {
   updated_at: "2026-10-01T12:00:00Z",
   files: [],
   world_version: null,
+  model_version: null,
+  plan_version: null,
+  last_compile_ok: null,
+  latest_run_id: null,
+  latest_report_id: null,
 };
 
 const COMPILE_OK: CompileModelResponse = { ok: true, model_version: "model-1", diagnostics: [] };
@@ -40,10 +63,32 @@ const COMPILE_FAILED: CompileModelResponse = {
   ],
 };
 
+const WORLD_PROJECT: Project = { ...PROJECT, status: "world_ready", world_version: "w-1" };
+
+/** World, compiled model, a run, and its report: the server's record completes steps 1-4. */
+function fullProject(): Project {
+  return {
+    ...WORLD_PROJECT,
+    status: "model_ready",
+    model_version: "model-1",
+    plan_version: "plan-1",
+    last_compile_ok: true,
+    latest_run_id: EXAMPLE_INTERVENTION_RUN_ID,
+    latest_report_id: EXAMPLE_INTERVENTION_REPORT_ID,
+  };
+}
+
 /** The server holds a world for p-1, so step 1 is complete as soon as the project loads. */
 function withServerWorld(): void {
-  vi.mocked(getProject).mockResolvedValue({ ...PROJECT, status: "world_ready", world_version: "w-1" });
+  vi.mocked(getProject).mockResolvedValue({ ...WORLD_PROJECT });
   vi.mocked(getWorld).mockResolvedValue({ ...exampleWorld(), project_id: "p-1", world_version: "w-1" });
+}
+
+/** Runs and reports of the bundled incident forecast, served for p-1. */
+function withServerRuns(): void {
+  vi.mocked(listRuns).mockResolvedValue(exampleRunSummaries());
+  vi.mocked(getRun).mockImplementation(async (_project, runId) => exampleRunResult(runId)!);
+  vi.mocked(getProjectReport).mockImplementation(async (_project, reportId) => exampleReport(reportId)!);
 }
 
 enableAutoUnmount(afterEach);
@@ -70,7 +115,18 @@ beforeEach(() => {
   vi.mocked(getProject).mockRejectedValue(serverUnavailable());
   vi.mocked(getWorld).mockReset();
   vi.mocked(getWorld).mockRejectedValue(serverUnavailable());
-  for (const fn of [getMechanismGraph, listVariables, listMechanisms, getEligibility, compileModel]) vi.mocked(fn).mockReset();
+  for (const fn of [getMechanismGraph, listVariables, listMechanisms, getEligibility, compileModel, getModel]) vi.mocked(fn).mockReset();
+  for (const fn of [runForecast, listRuns, getRun, getRankDiagnostics, getReport, getProjectReport, listReports, importWorld]) {
+    vi.mocked(fn).mockReset();
+  }
+  vi.mocked(listProjectTasks).mockReset();
+  vi.mocked(listProjectTasks).mockResolvedValue([]);
+  vi.mocked(getModel).mockRejectedValue(new ApiError({ status: 404, code: "model_not_found", message: "no model" }));
+  vi.mocked(listRuns).mockResolvedValue([]);
+  vi.mocked(getRun).mockRejectedValue(serverUnavailable());
+  vi.mocked(getProjectReport).mockRejectedValue(serverUnavailable());
+  vi.mocked(listReports).mockResolvedValue([]);
+  vi.mocked(getRankDiagnostics).mockRejectedValue(new ApiError({ status: 501, code: "not_implemented", message: "not yet" }));
   vi.mocked(getMechanismGraph).mockResolvedValue(exampleMechanismGraph());
   vi.mocked(listVariables).mockResolvedValue({ registry_version: "r1", variables: [] });
   vi.mocked(listMechanisms).mockResolvedValue(exampleMechanismGraph().mechanisms);
@@ -143,7 +199,7 @@ describe("ProcessView", () => {
     expect(currentPanelStep(wrapper)).toBe("1");
   });
 
-  it("completes step 2 only while the last compile is ok", async () => {
+  it("completes step 2 from the server's compile record and withdraws it after a failed compile", async () => {
     withServerWorld();
     const { wrapper } = await mountProcess();
     await wrapper.get("[data-testid='next-step']").trigger("click");
@@ -151,13 +207,18 @@ describe("ProcessView", () => {
     const next = () => wrapper.get("[data-testid='next-step']");
     expect(next().attributes("disabled")).toBeDefined();
 
+    const compiled: Project = { ...WORLD_PROJECT, status: "model_ready", model_version: "model-1", plan_version: "plan-1", last_compile_ok: true };
+    vi.mocked(getProject).mockResolvedValue(compiled);
     await wrapper.get("[data-testid='compile']").trigger("click");
     await flushPromises();
+    expect(projectStore.state.project?.last_compile_ok).toBe(true);
     expect(projectStore.isCompleted(2)).toBe(true);
     expect(next().attributes("disabled")).toBeUndefined();
     expect(stepButton(wrapper, 3).attributes("disabled")).toBeUndefined();
 
+    // A failed recompile keeps the plan but records last_compile_ok: false.
     vi.mocked(compileModel).mockResolvedValue(COMPILE_FAILED);
+    vi.mocked(getProject).mockResolvedValue({ ...compiled, last_compile_ok: false });
     await wrapper.get("[data-testid='compile']").trigger("click");
     await flushPromises();
     expect(projectStore.isCompleted(2)).toBe(false);
@@ -168,24 +229,68 @@ describe("ProcessView", () => {
     expect(stepButton(wrapper, 1).attributes("disabled")).toBeUndefined();
   });
 
-  it("hides next step on the last step and reports when every step is complete", async () => {
+  it("does not complete step 2 from a session compile the server's record contradicts", async () => {
     withServerWorld();
     const { wrapper } = await mountProcess();
     await wrapper.get("[data-testid='next-step']").trigger("click");
     await flushPromises();
+    // The refreshed record still has no compiled model (for example, the model changed meanwhile).
+    vi.mocked(getProject).mockResolvedValue({ ...WORLD_PROJECT, model_version: "model-2", last_compile_ok: null });
     await wrapper.get("[data-testid='compile']").trigger("click");
     await flushPromises();
-    await wrapper.get("[data-testid='next-step']").trigger("click");
-    // Steps 3 and 4 are not wired yet and keep the dev control.
-    for (let step = 3; step < 5; step += 1) {
-      expect(currentPanelStep(wrapper)).toBe(String(step));
-      await wrapper.get("[data-testid='mark-complete']").trigger("click");
-      await wrapper.get("[data-testid='next-step']").trigger("click");
-    }
+    expect(projectStore.isCompleted(2)).toBe(false);
+  });
+
+  it("follows the server's progress to step 5 and reports when every step is complete", async () => {
+    vi.mocked(getProject).mockResolvedValue(fullProject());
+    vi.mocked(getWorld).mockResolvedValue({ ...exampleWorld(), project_id: "p-1", world_version: "w-1" });
+    withServerRuns();
+    const { wrapper } = await mountProcess();
+    expect([1, 2, 3, 4].map((step) => projectStore.isCompleted(step as 1 | 2 | 3 | 4))).toEqual([true, true, true, true]);
+    expect(projectStore.isCompleted(5)).toBe(false);
+    expect(wrapper.find("[data-testid='mark-complete']").exists()).toBe(false);
+
+    await stepButton(wrapper, 5).trigger("click");
+    await flushPromises();
     expect(currentPanelStep(wrapper)).toBe("5");
     expect(wrapper.find("[data-testid='next-step']").exists()).toBe(false);
-    await wrapper.get("[data-testid='mark-complete']").trigger("click");
+    // Comparing the two runs is an interaction, which completes the last step.
+    expect(wrapper.findAll("[data-testid='compare-row']")).toHaveLength(3);
+    expect(projectStore.isCompleted(5)).toBe(true);
     expect(wrapper.get(".process__hint").text()).toBe("All steps are complete.");
+  });
+
+  it("a world re-import that clears model_version un-completes steps 2-4", async () => {
+    const reimported: Project = {
+      ...fullProject(),
+      status: "world_ready",
+      world_version: "w-2",
+      model_version: null,
+      plan_version: null,
+      last_compile_ok: null,
+    };
+    vi.mocked(getProject).mockResolvedValueOnce(fullProject()).mockResolvedValue(reimported);
+    vi.mocked(getWorld).mockResolvedValue({ ...exampleWorld(), project_id: "p-1", world_version: "w-1" });
+    vi.mocked(importWorld).mockResolvedValue({ ...exampleWorld(), project_id: "p-1", world_version: "w-2" });
+    withServerRuns();
+    const { wrapper } = await mountProcess();
+    projectStore.setLastCompile(COMPILE_OK);
+    expect(projectStore.state.completedSteps).toEqual([1, 2, 3, 4]);
+
+    const input = wrapper.get("[data-testid='world-file']");
+    const body = { ontology: { version: "o1", subtypes: [], roles: [] }, entities: [], role_assignments: [], participations: [], claims: [], evidence: [] };
+    Object.defineProperty(input.element, "files", { value: [new File([JSON.stringify(body)], "world.json")], configurable: true });
+    await input.trigger("change");
+    await flushPromises();
+
+    expect(importWorld).toHaveBeenCalledWith("p-1", body);
+    expect(projectStore.state.project?.model_version).toBeNull();
+    expect(projectStore.state.completedSteps).toEqual([1]);
+    expect(projectStore.state.lastCompile).toBeNull();
+    for (const step of [3, 4, 5]) expect(stepButton(wrapper, step).attributes("disabled")).toBeDefined();
+    expect(stepButton(wrapper, 2).attributes("disabled")).toBeUndefined();
+    // The runs are history and stay; only the gating changed.
+    expect(projectStore.state.project?.latest_run_id).toBe(EXAMPLE_INTERVENTION_RUN_ID);
   });
 
   it("switches the step labels to Chinese when the locale changes to zh", async () => {
@@ -232,6 +337,36 @@ describe("ProcessView", () => {
     expect(types.filter((type) => type === "variable")).toHaveLength(4);
     expect(types.filter((type) => type === "mechanism")).toHaveLength(1);
     expect(getMechanismGraph).not.toHaveBeenCalled();
+  });
+
+  it("with ?step=3&example=1 shows the bundled forecast offline: 25% vs 63% at step 2", async () => {
+    const { wrapper } = await mountProcess("demo", "?step=3&example=1");
+    expect(currentPanelStep(wrapper)).toBe("3");
+    expect(projectStore.isCompleted(3)).toBe(true);
+    const label = (series: string) =>
+      wrapper.get(`[data-testid='chart-step'][data-step='2'] [data-testid='chart-label'][data-series='${series}'][data-value='resolved']`).text();
+    expect(label("baseline")).toBe("25%");
+    expect(label("intervention")).toBe("63%");
+    expect(wrapper.findAll("[data-testid='run-row']")).toHaveLength(2);
+    expect(listRuns).not.toHaveBeenCalled();
+    expect(runForecast).not.toHaveBeenCalled();
+  });
+
+  it("with ?step=4&example=1 shows the bundled report, and ?step=5 the interaction panels", async () => {
+    const report = await mountProcess("demo", "?step=4&example=1");
+    expect(currentPanelStep(report.wrapper)).toBe("4");
+    expect(report.wrapper.findAll("[data-testid='report-statement']")).toHaveLength(9);
+    expect(report.wrapper.get("[data-testid='metric-calibration']").attributes("data-kind")).toBe("missing");
+    expect(projectStore.isCompleted(4)).toBe(true);
+    report.wrapper.unmount();
+
+    projectStore.reset();
+    const interaction = await mountProcess("demo", "?step=5&example=1");
+    expect(currentPanelStep(interaction.wrapper)).toBe("5");
+    expect(interaction.wrapper.get("[data-testid='compare-row'][data-value='resolved'] [data-testid='compare-diff']").text()).toBe("+38 pp");
+    expect(interaction.wrapper.find("[data-testid='rank-demo']").exists()).toBe(true);
+    expect(getProjectReport).not.toHaveBeenCalled();
+    expect(getRankDiagnostics).not.toHaveBeenCalled();
   });
 
   it("ignores ?step without example=1, so step gating still holds", async () => {

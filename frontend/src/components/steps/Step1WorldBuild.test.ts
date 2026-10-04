@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError, apiClient } from "../../api/client";
 import { getExample, listExamples } from "../../api/examples";
 import type { ExampleBundle, Project, Task, TaskStatus, WorldImport, WorldResponse } from "../../api/types";
-import { getProject, getWorld, importWorld, startExtraction } from "../../api/world";
+import { getProject, getWorld, importWorld, listProjectTasks, startExtraction } from "../../api/world";
 import { projectStore } from "../../store/project";
 import { createTestPlugins, serverUnavailable } from "../../test-support";
 import { exampleWorld } from "../graph/examples";
@@ -15,6 +15,7 @@ vi.mock("../../api/world", () => ({
   getProject: vi.fn(),
   importWorld: vi.fn(),
   startExtraction: vi.fn(),
+  listProjectTasks: vi.fn(),
 }));
 vi.mock("../../api/examples", () => ({ listExamples: vi.fn(), getExample: vi.fn() }));
 
@@ -30,6 +31,11 @@ const PROJECT: Project = {
     { file_id: "file_b", filename: "survey.txt", size_bytes: 512, content_hash: "0011223344556677" },
   ],
   world_version: null,
+  model_version: null,
+  plan_version: null,
+  last_compile_ok: null,
+  latest_run_id: null,
+  latest_report_id: null,
 };
 
 const WORLD_IMPORT: WorldImport = {
@@ -99,6 +105,8 @@ beforeEach(() => {
   vi.mocked(getProject).mockResolvedValue({ ...PROJECT, status: "world_ready", world_version: "w-123" });
   vi.mocked(importWorld).mockReset();
   vi.mocked(startExtraction).mockReset();
+  vi.mocked(listProjectTasks).mockReset();
+  vi.mocked(listProjectTasks).mockResolvedValue([]);
   vi.mocked(listExamples).mockReset();
   vi.mocked(getExample).mockReset();
   getSpy.mockReset();
@@ -267,6 +275,44 @@ describe("Step1WorldBuild", () => {
       expect(notice.text()).toContain("Extraction failed");
       expect(notice.text()).toContain("the model returned no entities");
       expect(wrapper.emitted("complete")).toBeUndefined();
+    });
+
+    it("resumes polling an extraction that is still running after a reload", async () => {
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      vi.mocked(getWorld).mockRejectedValueOnce(worldNotReady()).mockResolvedValue(serverWorld());
+      vi.mocked(listProjectTasks).mockResolvedValue([task("running", 0.5, "Reading survey.txt")]);
+      getSpy.mockResolvedValueOnce(ok(task("running", 0.7, "Resolving entities"))).mockResolvedValueOnce(ok(task("completed", 1, "done")));
+      projectStore.setProject({ ...PROJECT, status: "extracting" });
+      const wrapper = await mountStep();
+
+      expect(listProjectTasks).toHaveBeenCalledWith("p-1", { kind: "world_extraction", status: ["pending", "running"] });
+      expect(startExtraction).not.toHaveBeenCalled();
+      expect(getSpy).toHaveBeenCalledWith("/tasks/task_1");
+      const progress = wrapper.get("[data-testid='extraction-progress']");
+      expect(progress.text()).toContain("70%");
+      expect(wrapper.get("[data-testid='run-extraction']").attributes("disabled")).toBeDefined();
+
+      await vi.advanceTimersByTimeAsync(1_000);
+      await flushPromises();
+      expect(getSpy).toHaveBeenCalledTimes(2);
+      expect(wrapper.find("[data-testid='extraction-progress']").exists()).toBe(false);
+      expect(wrapper.findAll("[data-testid='graph-node']")).toHaveLength(6);
+      expect(wrapper.emitted("complete")).toHaveLength(1);
+    });
+
+    it("ignores finished tasks and a server without the task listing", async () => {
+      vi.mocked(getWorld).mockRejectedValue(worldNotReady());
+      vi.mocked(listProjectTasks).mockResolvedValueOnce([task("failed", 0.2, null)]);
+      projectStore.setProject(PROJECT);
+      const first = await mountStep();
+      expect(getSpy).not.toHaveBeenCalled();
+      expect(first.find("[data-testid='extraction-progress']").exists()).toBe(false);
+      first.unmount();
+
+      vi.mocked(listProjectTasks).mockRejectedValueOnce(new ApiError({ status: 404, code: "not_found", message: "no route" }));
+      const second = await mountStep();
+      expect(second.find("[data-testid='world-action-error']").exists()).toBe(false);
+      expect(second.get("[data-testid='run-extraction']").attributes("disabled")).toBeUndefined();
     });
 
     it("stops polling when the step unmounts", async () => {

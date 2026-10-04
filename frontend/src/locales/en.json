@@ -6,8 +6,14 @@
   },
   "language": {
     "label": "Language",
-    "en": { "short": "EN", "name": "English" },
-    "zh": { "short": "中文", "name": "中文" }
+    "en": {
+      "short": "EN",
+      "name": "English"
+    },
+    "zh": {
+      "short": "中文",
+      "name": "中文"
+    }
   },
   "common": {
     "loading": "Loading…",
@@ -379,14 +385,293 @@
   "report": {
     "title": "Report",
     "idLabel": "Report",
-    "description": "Forecast distributions, baseline against intervention, and validation status for one report.",
-    "placeholder": "Report rendering arrives with the step 4 build."
+    "description": "Forecast distributions by horizon, baseline against intervention, the server's statements, the assumptions, and the validation status of one report.",
+    "backToProject": "Project",
+    "notExample": "The offline example has no report with this id."
   },
   "interaction": {
     "title": "Interaction",
     "idLabel": "Report",
-    "description": "What-if queries, the mechanism inspector, and rank and influence views for one report.",
-    "placeholder": "Interactive tools arrive with the step 5 build."
+    "description": "What-if re-runs, run comparison, the mechanism inspector, and rank and influence diagnostics for this report's project.",
+    "openReport": "Open report"
+  },
+  "forecast": {
+    "none": "none",
+    "series": {
+      "baseline": "Baseline ({scenario})",
+      "intervention": "Intervention ({scenario})"
+    },
+    "effect": {
+      "model_based_intervention": "model-based intervention",
+      "not_applicable": "observational (no intervention)",
+      "note": "Computed by surgery on the stated model: the intervened inputs are held at their values and every other mechanism is unchanged. It is a model-based result, not an effect identified from data."
+    },
+    "queryKind": {
+      "observational": "observational",
+      "interventional": "interventional"
+    },
+    "runStatus": {
+      "pending": "Queued",
+      "running": "Running",
+      "completed": "Completed",
+      "failed": "Failed"
+    },
+    "chart": {
+      "title": "{variable} of {entity}: distribution by horizon step",
+      "step": "Step {step}",
+      "stepMinutes": "Step {step} (t + {minutes} min)",
+      "axis": "Probability on a fixed 0–100% axis",
+      "legend": "Series",
+      "table": "Show values as a table",
+      "tableStep": "Step",
+      "tableOutcome": "Outcome",
+      "summary": "Probability of each outcome on a fixed 0 to 100% axis, one panel per horizon step.",
+      "summaryStep": "{step}: {values}.",
+      "summarySeries": "{series}: {values}"
+    },
+    "form": {
+      "targetEntity": "Target entity",
+      "targetVariable": "Target variable",
+      "ownership": {
+        "endogenous": "outcome (endogenous)",
+        "exogenous": "input (exogenous)"
+      },
+      "horizon": "Horizon (steps)",
+      "horizonRange": "1 to {max}, the model's horizon",
+      "horizonUnknown": "The server bounds the horizon.",
+      "scenario": "Scenario id",
+      "scenarioPlaceholder": "server default",
+      "interventions": "Hard interventions",
+      "rules": {
+        "input": "An intervention holds an input variable at one value from its domain. It sets an input, never the outcome being forecast.",
+        "window": "Each window is half-open, [start, end): the value holds for the transitions start→start+1 through end−1→end. End must be greater than start and at most the horizon.",
+        "unavailable": "Mechanism replacement and policy replacement are not available yet; only hard assignments run."
+      },
+      "dropped": "Left out of the request because they cannot be edited here: {kinds}.",
+      "hard": "Hard assignment {n}",
+      "remove": "Remove",
+      "ivVariable": "Variable",
+      "ivEntity": "Entity",
+      "ivValue": "Value",
+      "chooseValue": "Choose a value",
+      "notInDomain": "{value} (not in the domain)",
+      "start": "Start step",
+      "end": "End step (exclusive)",
+      "transitions": "holds for {list}",
+      "noInterventions": "No interventions: the request is an observational forecast.",
+      "add": "Add hard intervention",
+      "submit": "Run forecast",
+      "running": "Running…",
+      "errors": {
+        "target": "Choose a target entity and variable.",
+        "targetKind": "This variable is not registered for the entity's kind.",
+        "horizon": "The horizon must be a whole number of at least 1.",
+        "horizonMax": "The horizon must be at most {max}, the model's horizon.",
+        "scenario": "Use letters, digits, dots, underscores, or hyphens, starting with a letter or digit.",
+        "variable": "Choose a variable registered in the model.",
+        "outcome": "This would set the forecast target itself. Intervene on an input instead.",
+        "entity": "Choose an entity whose kind has this variable.",
+        "value": "Choose a value from the domain.",
+        "outOfDomain": "{value} is not in this variable's domain for the entity's kind.",
+        "windowInteger": "Start and end must be whole numbers, with start at least 0.",
+        "windowInverted": "End ({end}) must be greater than start ({start}): the window [start, end) is half-open.",
+        "windowHorizon": "End ({end}) must not exceed the horizon ({horizon}).",
+        "blocked": "Fix the marked fields; nothing was sent."
+      }
+    },
+    "uncertainty": {
+      "heading": "Uncertainty",
+      "parameter": "Parameter uncertainty",
+      "modelError": "Model error",
+      "method": "Method",
+      "noInterval": "No interval is drawn: an exact calculation from assumed kernels has no measured spread, and a zero-width band would overstate certainty."
+    },
+    "provenance": {
+      "heading": "Provenance",
+      "dataOrigin": "Data origin",
+      "parameterOrigin": "Parameter origin",
+      "validationStatus": "Validation status",
+      "mechanism": "Mechanism",
+      "kernel": "Kernel",
+      "fittingMethod": "Fitting method",
+      "trainingCutoff": "Training cutoff",
+      "causalBasis": "Causal basis"
+    },
+    "result": {
+      "openReport": "Open report",
+      "held": "held",
+      "references": "Exact references",
+      "scopeScenario": "Queried scenario",
+      "cutoff": "Information cutoff",
+      "initialBelief": "Initial belief",
+      "conditioning": "Conditioning",
+      "modelVersion": "Model version",
+      "worldVersion": "World version",
+      "repoSha": "Repository SHA"
+    },
+    "runs": {
+      "target": "{variable} · {entity} · {steps} steps",
+      "report": "Report"
+    },
+    "errors": {
+      "notCompiled": "The model is not compiled. Compile it in step 2, then run the forecast.",
+      "rejected": "The server rejected this forecast request",
+      "notImplemented": "Not available on this server",
+      "conflict": "The project changed while the request was sent (conflict)"
+    }
+  },
+  "step3": {
+    "request": {
+      "heading": "Forecast request",
+      "model": "Model {version} · horizon {horizon}",
+      "demo": "Offline example: the form holds the guide's interventional request (crew capacity held high over [0, 2)). Without a server, only that request and the plain baseline have results.",
+      "noModel": "No model yet. Import and compile a model in step 2.",
+      "stalePlan": "The last compile failed, so forecasts use the last plan that compiled."
+    },
+    "demoMiss": {
+      "title": "No bundled result for this request",
+      "body": "The offline example only has results for the guide's interventional request and the plain baseline. Start the server to run other requests."
+    },
+    "runs": {
+      "heading": "Runs",
+      "count": "No runs | 1 run | {count} runs",
+      "empty": "No runs yet. Submit a forecast request."
+    },
+    "selected": {
+      "heading": "Selected run",
+      "empty": "Select a run, or submit a forecast request."
+    }
+  },
+  "step4": {
+    "heading": "Report",
+    "pick": "Report to show",
+    "openStandalone": "Open as a page",
+    "openInteraction": "Open interaction view",
+    "unknownExample": "The offline example has no report {id}.",
+    "empty": {
+      "title": "No report yet",
+      "body": "Each forecast run creates a report. Run a forecast in step 3."
+    }
+  },
+  "step5": {
+    "run": {
+      "heading": "Run",
+      "label": "Run to work with",
+      "empty": "No runs yet. Run a forecast in step 3."
+    },
+    "whatif": {
+      "heading": "What-if",
+      "intro": "Re-run the selected run's request with an edited intervention. The result is a new run of the same model.",
+      "submit": "Run what-if"
+    },
+    "compare": {
+      "heading": "Compare runs",
+      "runA": "Run A",
+      "runB": "Run B",
+      "step": "Horizon step",
+      "seriesA": "Run A ({scenario})",
+      "seriesB": "Run B ({scenario})",
+      "chartTitle": "{variable} of {entity} at step {step}: two runs",
+      "caption": "Difference between two model runs at step {step} (B − A, in percentage points). Both runs are outputs of the stated model.",
+      "difference": "B − A",
+      "needTwo": "Comparing needs at least two runs.",
+      "same": "Pick two different runs.",
+      "mismatch": "These runs forecast different targets. Pick two runs of the same variable and entity."
+    },
+    "inspector": {
+      "heading": "Mechanism inspector",
+      "empty": "No mechanism graph yet. Compile a model in step 2."
+    },
+    "rank": {
+      "heading": "Rank and influence",
+      "idle": "Select a run to see its diagnostics.",
+      "disabled": {
+        "title": "Ranking diagnostics are not enabled on this server yet",
+        "body": "The server answered 501 for this run. Forecasts and reports are unaffected."
+      },
+      "demo": {
+        "title": "Offline example",
+        "body": "Ranking diagnostics come from the server; the offline example has none."
+      },
+      "method": "Method",
+      "hashes": "Kernel hashes",
+      "unchanged": "unchanged by ranking",
+      "changed": "changed (ranking must never change kernels)",
+      "node": "Node",
+      "kind": "Kind",
+      "score": "Score",
+      "bound": "Influence bound",
+      "sampled": "sampled estimate only",
+      "prunable": "Certified prunable"
+    }
+  },
+  "reportBody": {
+    "eyebrow": "Report",
+    "title": "{variable} of {entity}",
+    "facts": {
+      "target": "Target",
+      "horizon": "Horizon",
+      "horizonSteps": "{steps} steps",
+      "horizonMinutes": "{steps} steps of {minutes} min",
+      "cutoff": "Information cutoff",
+      "origin": "Data origin",
+      "modelVersion": "Model version",
+      "validationStatus": "Validation status",
+      "uncertaintyMethod": "Uncertainty method",
+      "run": "Run",
+      "created": "Created"
+    },
+    "statements": {
+      "heading": "Statements",
+      "verbatim": "Shown exactly as the server wrote them. Each describes probability mass in this model, not a probability about the actual world.",
+      "none": "This report has no statements.",
+      "kind": {
+        "distribution": "distribution",
+        "comparison": "comparison"
+      }
+    },
+    "distributions": "Distributions by horizon",
+    "metrics": {
+      "heading": "Validation metrics",
+      "nll": "NLL (bits)",
+      "brier": "Brier score",
+      "calibration": "Calibration (ECE)",
+      "parameterUncertainty": "Parameter uncertainty",
+      "modelError": "Model error",
+      "impossible": "An observed outcome was assigned zero probability.",
+      "predicted": "Predicted",
+      "observed": "Observed",
+      "count": "Count",
+      "note": "A metric that was not measured reads \"missing\" (for example, when no backtest exists); it is never shown as 0."
+    },
+    "assumptions": {
+      "heading": "Assumptions",
+      "causalBasis": "Causal basis",
+      "kernels": "Kernels",
+      "priors": "Priors (initial beliefs)",
+      "key": "Key",
+      "distribution": "Distribution (domain order)",
+      "origin": "Origin",
+      "interventions": "Interventions",
+      "noInterventions": "None: an observational forecast.",
+      "notes": "Notes",
+      "none": "This report lists no assumptions."
+    },
+    "sourceBacked": {
+      "heading": "Source-backed observations",
+      "evidence": "Evidence records",
+      "claims": "Claims",
+      "note": "Counted apart from the assumptions above: these records come from sources; the assumptions do not."
+    }
+  },
+  "history": {
+    "show": "Runs and reports",
+    "hide": "Hide runs and reports",
+    "runs": "No runs | 1 run | {count} runs",
+    "reports": "No reports | 1 report | {count} reports",
+    "noRuns": "No runs yet.",
+    "noReports": "No reports yet.",
+    "interact": "Interact"
   },
   "notFound": {
     "code": "404",

@@ -392,3 +392,40 @@ select {
   color: var(--c2p-text-muted);
   font-size: var(--c2p-text-xs);
 }
+
+/* Key/value facts (forecast results, reports): a wrapping row of small labelled values. */
+.facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 11rem), 1fr));
+  gap: var(--c2p-space-3) var(--c2p-space-5);
+  margin: 0;
+}
+
+.facts div {
+  display: grid;
+  gap: 0.1rem;
+  align-content: start;
+  min-width: 0;
+}
+
+.facts dt {
+  color: var(--c2p-text-muted);
+  font-size: var(--c2p-text-xs);
+}
+
+.facts dd {
+  margin: 0;
+  font-size: var(--c2p-text-sm);
+  overflow-wrap: anywhere;
+}
+
+.facts dd.mono {
+  font-size: var(--c2p-text-xs);
+}
+
+/* A value the server marked "missing": shown as the word, never as blank or zero. */
+.is-missing {
+  color: var(--c2p-warning);
+  font-style: italic;
+  font-weight: 600;
+}

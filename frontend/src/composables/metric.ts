@@ -19,3 +19,15 @@ export function formatMetric(
   if (reading.kind === "infinite") return { kind: "infinite", text: t("metric.infinite") };
   return { kind: "missing", text: t("metric.missing") };
 }
+
+/**
+ * Display text for a wire field that is either the marker `"missing"` or a
+ * server statement (such as "not modeled"). Absent, empty, and `null` values
+ * read as missing, never as blank.
+ */
+export function formatMarker(value: unknown, t: (key: string) => string): MetricText {
+  if (typeof value !== "string" || value.trim() === "" || value === "missing") {
+    return { kind: "missing", text: t("metric.missing") };
+  }
+  return { kind: "number", text: value };
+}

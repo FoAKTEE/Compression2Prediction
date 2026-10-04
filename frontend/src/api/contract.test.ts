@@ -30,7 +30,22 @@ const MODEL: ModelImport = {
   schema_version: "model_import.v1",
   registry: { version: "r1", variables: [] },
   templates: [],
-  kernels: [{ kernel_ref: "k1", payload: {} }],
+  kernels: [
+    {
+      kernel_ref: "k1",
+      payload: {
+        schema_version: "kernel.v1",
+        matrix_convention: "rows=input",
+        source: { name: "Unit", values: ["*"] },
+        target: { name: "CrewCapacity", values: ["normal", "high"] },
+        rows: [[1, 0]],
+        parameter_origin: "hand_specified",
+        fitting_method: "hand_specified",
+        training_cutoff: null,
+        extra: {},
+      },
+    },
+  ],
   horizon_steps: 2,
   scenario_id: "baseline",
   sources: [["baseline", "crew_capacity", "ent_repair_crew", 0]],

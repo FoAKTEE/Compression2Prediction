@@ -42,13 +42,33 @@ const PROJECT: Project = {
   updated_at: "2026-10-01T12:00:00Z",
   files: [],
   world_version: "w1",
+  model_version: null,
+  plan_version: null,
+  last_compile_ok: null,
+  latest_run_id: null,
+  latest_report_id: null,
 };
 
 const MODEL: ModelImport = {
   schema_version: "model_import.v1",
   registry: { version: "example.registry.v1", variables: exampleVariables().variables },
   templates: [],
-  kernels: [{ kernel_ref: "kernel_incident_progress.v1", payload: { rows: [] } }],
+  kernels: [
+    {
+      kernel_ref: "kernel_incident_progress.v1",
+      payload: {
+        schema_version: "kernel.v1",
+        matrix_convention: "rows=input",
+        source: { name: "Unit", values: ["*"] },
+        target: { name: "IncidentStatus", values: ["unacknowledged", "acknowledged", "resolved"] },
+        rows: [[0.6, 0.3, 0.1]],
+        parameter_origin: "hand_specified_illustration",
+        fitting_method: "hand_specified",
+        training_cutoff: null,
+        extra: {},
+      },
+    },
+  ],
   horizon_steps: 2,
   scenario_id: "scn_baseline",
   sources: [["scn_baseline", "crew_capacity", "ent_repair_crew", 0]],

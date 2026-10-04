@@ -29,6 +29,17 @@
   --c2p-kind-resource: #4a3aa7;
   --c2p-kind-topic: #e34948;
 
+  /*
+   * Forecast series (categorical slots 1, 2, 3, 7 of the validated chart palette).
+   * Baseline vs intervention, and run A vs run B in comparisons; every chart also
+   * labels its values and hatches the second series, so color is never the only cue.
+   */
+  --c2p-series-baseline: #2a78d6;
+  --c2p-series-intervention: #eb6834;
+  --c2p-series-run-a: #1baf7a;
+  --c2p-series-run-b: #4a3aa7;
+  --c2p-series-hatch: rgba(255, 255, 255, 0.55);
+
   /* Type */
   --c2p-font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", "PingFang SC",
     "Noto Sans SC", "Microsoft YaHei", sans-serif;
@@ -88,5 +99,11 @@
     --c2p-kind-artifact: #008300;
     --c2p-kind-resource: #9085e9;
     --c2p-kind-topic: #e66767;
+
+    --c2p-series-baseline: #3987e5;
+    --c2p-series-intervention: #d95926;
+    --c2p-series-run-a: #199e70;
+    --c2p-series-run-b: #9085e9;
+    --c2p-series-hatch: rgba(17, 17, 17, 0.5);
   }
 }

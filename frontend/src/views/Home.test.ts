@@ -1,6 +1,8 @@
 import { flushPromises, mount } from "@vue/test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../api/client";
+import { listRuns } from "../api/forecast";
+import { listReports } from "../api/report";
 import type { Project, ProjectSummary } from "../api/types";
 import { createProject, listProjects } from "../api/world";
 import { projectStore } from "../store/project";
@@ -8,6 +10,8 @@ import { createTestPlugins, serverUnavailable } from "../test-support";
 import Home from "./Home.vue";
 
 vi.mock("../api/world", () => ({ listProjects: vi.fn(), createProject: vi.fn() }));
+vi.mock("../api/forecast", () => ({ listRuns: vi.fn() }));
+vi.mock("../api/report", () => ({ listReports: vi.fn() }));
 
 const SUMMARY: ProjectSummary = {
   project_id: "p-1",
@@ -16,6 +20,12 @@ const SUMMARY: ProjectSummary = {
   status: "world_ready",
   created_at: "2026-10-01T12:00:00Z",
   updated_at: "2026-10-01T12:00:00Z",
+  world_version: "w-1",
+  model_version: null,
+  plan_version: null,
+  last_compile_ok: null,
+  latest_run_id: null,
+  latest_report_id: null,
 };
 
 async function mountHome() {
@@ -32,6 +42,8 @@ function setFiles(input: HTMLInputElement, files: File[]): void {
 beforeEach(() => {
   vi.mocked(listProjects).mockReset();
   vi.mocked(createProject).mockReset();
+  vi.mocked(listRuns).mockReset();
+  vi.mocked(listReports).mockReset();
   projectStore.reset();
 });
 
@@ -77,6 +89,82 @@ describe("Home", () => {
     expect(rows[0]?.text()).toContain("Depot incident");
     expect(rows[0]?.text()).toContain("World ready");
     expect(rows[0]?.get("a").attributes("href")).toBe("/process/p-1");
+  });
+
+  it("expands a project's history: its runs and reports, with links to each report", async () => {
+    vi.mocked(listProjects).mockResolvedValue([SUMMARY]);
+    vi.mocked(listRuns).mockResolvedValue([
+      {
+        run_id: "run_b",
+        project_id: "p-1",
+        scenario_id: "extra_crew",
+        status: "completed",
+        query_kind: "interventional",
+        effect_status: "model_based_intervention",
+        target_entity_id: "ent_incident_001",
+        target_variable: "incident_status",
+        horizon_steps: 2,
+        report_id: "rep_b",
+        created_at: "2026-10-04T09:05:00Z",
+      },
+      {
+        run_id: "run_a",
+        project_id: "p-1",
+        scenario_id: "baseline",
+        status: "completed",
+        query_kind: "observational",
+        effect_status: "not_applicable",
+        target_entity_id: "ent_incident_001",
+        target_variable: "incident_status",
+        horizon_steps: 2,
+        report_id: "rep_a",
+        created_at: "2026-10-04T09:00:00Z",
+      },
+    ]);
+    vi.mocked(listReports).mockResolvedValue([
+      { report_id: "rep_b", run_id: "run_b", scenario_id: "extra_crew", query_kind: "interventional", created_at: "2026-10-04T09:05:00Z" },
+      { report_id: "rep_a", run_id: "run_a", scenario_id: "baseline", query_kind: "observational", created_at: "2026-10-04T09:00:00Z" },
+    ]);
+    const { wrapper } = await mountHome();
+    expect(listRuns).not.toHaveBeenCalled();
+    const toggle = wrapper.get("[data-testid='toggle-history']");
+    expect(toggle.attributes("aria-expanded")).toBe("false");
+    await toggle.trigger("click");
+    await flushPromises();
+
+    expect(toggle.attributes("aria-expanded")).toBe("true");
+    expect(listRuns).toHaveBeenCalledWith("p-1");
+    expect(listReports).toHaveBeenCalledWith("p-1");
+    const history = wrapper.get("[data-testid='project-history']");
+    const runs = history.findAll("[data-testid='history-run']");
+    expect(runs.map((r) => r.attributes("data-run-id"))).toEqual(["run_b", "run_a"]);
+    expect(runs[0]!.get("[data-testid='effect-badge']").text()).toBe("model-based intervention");
+    expect(runs[0]!.get("[data-testid='history-run-report']").attributes("href")).toBe("/report/rep_b");
+    const reportLinks = history.findAll("[data-testid='history-report-link']");
+    expect(reportLinks.map((a) => a.attributes("href"))).toEqual(["/report/rep_b", "/report/rep_a"]);
+    expect(history.findAll("[data-testid='history-interaction-link']")[1]!.attributes("href")).toBe("/interaction/rep_a");
+    // The process link stays the row's first link.
+    expect(wrapper.get("[data-testid='project-row'] a").attributes("href")).toBe("/process/p-1");
+
+    await toggle.trigger("click");
+    expect(wrapper.find("[data-testid='project-history']").exists()).toBe(false);
+  });
+
+  it("shows an empty history and a failed one as such", async () => {
+    vi.mocked(listProjects).mockResolvedValue([SUMMARY]);
+    vi.mocked(listRuns).mockResolvedValue([]);
+    vi.mocked(listReports).mockResolvedValue([]);
+    const { wrapper } = await mountHome();
+    await wrapper.get("[data-testid='toggle-history']").trigger("click");
+    await flushPromises();
+    expect(wrapper.get("[data-testid='history-no-runs']").text()).toBe("No runs yet.");
+    expect(wrapper.get("[data-testid='history-no-reports']").text()).toBe("No reports yet.");
+    await wrapper.get("[data-testid='toggle-history']").trigger("click");
+
+    vi.mocked(listRuns).mockRejectedValue(serverUnavailable());
+    await wrapper.get("[data-testid='toggle-history']").trigger("click");
+    await flushPromises();
+    expect(wrapper.get("[data-testid='history-error']").attributes("data-variant")).toBe("unavailable");
   });
 
   it("validates required fields before calling createProject", async () => {

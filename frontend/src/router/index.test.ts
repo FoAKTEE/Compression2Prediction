@@ -1,10 +1,26 @@
 import { flushPromises, mount } from "@vue/test-utils";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "../App.vue";
+import { getRankDiagnostics, getRun, listRuns } from "../api/forecast";
+import { getMechanismGraph, getModel, listVariables } from "../api/model";
+import { getReport } from "../api/report";
+import { exampleReport, EXAMPLE_INTERVENTION_REPORT_ID } from "../components/forecast/examples";
 import { createTestPlugins } from "../test-support";
 import { createAppRouter } from "./index";
 
-vi.mock("../api/world", () => ({ listProjects: vi.fn(), createProject: vi.fn(), getProject: vi.fn() }));
+vi.mock("../api/world", () => ({ listProjects: vi.fn(), createProject: vi.fn(), getProject: vi.fn(), getWorld: vi.fn() }));
+vi.mock("../api/report", () => ({ getReport: vi.fn(), getProjectReport: vi.fn(), listReports: vi.fn() }));
+vi.mock("../api/forecast", () => ({ listRuns: vi.fn(), getRun: vi.fn(), runForecast: vi.fn(), getRankDiagnostics: vi.fn() }));
+vi.mock("../api/model", () => ({ listVariables: vi.fn(), getModel: vi.fn(), getMechanismGraph: vi.fn() }));
+
+const pending = () => new Promise<never>(() => {});
+
+beforeEach(() => {
+  for (const fn of [getReport, listRuns, getRun, getRankDiagnostics, listVariables, getModel, getMechanismGraph]) {
+    vi.mocked(fn).mockReset();
+    vi.mocked(fn).mockReturnValue(pending());
+  }
+});
 
 describe("router", () => {
   it("renders NotFound for unknown paths", async () => {
@@ -29,7 +45,7 @@ describe("router", () => {
     expect(router.resolve("/process").name).toBe("not-found");
   });
 
-  it("renders the report and interaction placeholders with their IDs", async () => {
+  it("renders the report and interaction views with their IDs", async () => {
     for (const [path, testId] of [
       ["/report/r-9", "report-view"],
       ["/interaction/r-9", "interaction-view"],
@@ -40,6 +56,29 @@ describe("router", () => {
       expect(wrapper.get(`[data-testid='${testId}']`).text()).toContain("r-9");
       wrapper.unmount();
     }
+  });
+
+  it("renders a report standalone with ReportBody, and the interaction panels for its project", async () => {
+    const body = { ...exampleReport(EXAMPLE_INTERVENTION_REPORT_ID)!, project_id: "proj_1" };
+    vi.mocked(getReport).mockResolvedValue(body);
+    vi.mocked(listRuns).mockResolvedValue([]);
+    const report = await createTestPlugins({ path: `/report/${EXAMPLE_INTERVENTION_REPORT_ID}` });
+    const page = mount(App, { global: { plugins: [...report.plugins] } });
+    await flushPromises();
+    expect(getReport).toHaveBeenCalledWith(EXAMPLE_INTERVENTION_REPORT_ID);
+    expect(page.findAll("[data-testid='report-statement']")).toHaveLength(9);
+    expect(page.get("[data-testid='report-cutoff']").text()).toBe("none");
+    expect(page.get("[data-testid='report-process-link']").attributes("href")).toBe("/process/proj_1");
+    expect(page.get("[data-testid='report-interaction-link']").attributes("href")).toBe(`/interaction/${EXAMPLE_INTERVENTION_REPORT_ID}`);
+    page.unmount();
+
+    const interaction = await createTestPlugins({ path: `/interaction/${EXAMPLE_INTERVENTION_REPORT_ID}` });
+    const panels = mount(App, { global: { plugins: [...interaction.plugins] } });
+    await flushPromises();
+    expect(listRuns).toHaveBeenCalledWith("proj_1");
+    expect(panels.find("[data-testid='interaction-panels']").exists()).toBe(true);
+    expect(panels.get("[data-testid='interaction-report-link']").attributes("href")).toBe(`/report/${EXAMPLE_INTERVENTION_REPORT_ID}`);
+    panels.unmount();
   });
 
   it("uses HTML5 history mode by default", () => {

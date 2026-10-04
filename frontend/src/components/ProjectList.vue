@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import type { ProjectSummary } from "../api/types";
 import { errorNotice } from "../composables/errorNotice";
 import { htmlLang, isLocale } from "../i18n";
 import { padStep } from "../process/steps";
+import ProjectHistory from "./ProjectHistory.vue";
 import StateNotice from "./StateNotice.vue";
 
 const props = defineProps<{
@@ -16,6 +17,16 @@ const props = defineProps<{
 
 const emit = defineEmits<{ retry: [] }>();
 const { t, te, locale } = useI18n();
+
+/** Projects whose run and report history is expanded. */
+const expanded = ref<Set<string>>(new Set());
+
+function toggle(projectId: string): void {
+  const next = new Set(expanded.value);
+  if (next.has(projectId)) next.delete(projectId);
+  else next.add(projectId);
+  expanded.value = next;
+}
 
 const notice = computed(() => (props.error === null || props.error === undefined ? null : errorNotice(props.error, t)));
 
@@ -73,6 +84,21 @@ function formatDate(iso: string): string {
             </span>
           </span>
         </RouterLink>
+        <button
+          type="button"
+          class="btn btn--quiet project-row__toggle"
+          data-testid="toggle-history"
+          :aria-expanded="expanded.has(project.project_id)"
+          :aria-controls="`history-${project.project_id}`"
+          @click="toggle(project.project_id)"
+        >
+          <span aria-hidden="true">{{ expanded.has(project.project_id) ? "−" : "+" }}</span>
+          {{ expanded.has(project.project_id) ? t("history.hide") : t("history.show") }}
+          <span class="sr-only">({{ project.name }})</span>
+        </button>
+        <div v-if="expanded.has(project.project_id)" :id="`history-${project.project_id}`">
+          <ProjectHistory :project-id="project.project_id" />
+        </div>
       </li>
     </ol>
   </div>
@@ -139,6 +165,19 @@ function formatDate(iso: string): string {
   flex-wrap: wrap;
   align-items: center;
   gap: var(--c2p-space-3);
+}
+
+.project-row__toggle {
+  min-height: 2rem;
+  margin: 0 0 var(--c2p-space-2) calc(var(--c2p-space-2) + 2.25rem);
+  padding: 0 var(--c2p-space-2);
+  font-size: var(--c2p-text-xs);
+}
+
+@media (max-width: 40rem) {
+  .project-row__toggle {
+    margin-left: var(--c2p-space-2);
+  }
 }
 
 .project-row__date {

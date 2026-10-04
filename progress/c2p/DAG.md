@@ -554,23 +554,22 @@ note: some edge labels overlap in the world view (cosmetic, revisit in N14)
 
 ### N14 — Steps 1–5 + history
 
-- status: `in-progress`
+- status: `done`
 - depends: N13, N11
 - substages: steps 1–2 (world build, model setup) → steps 3–5 (forecast & simulate,
   report, interaction) + history (no memo §4.4 row)
 - acceptance:
   - e2e against an in-process server with a mocked LLM: the six-entity fixture flows through steps 1–4
   - Step 4 never shows a number for missing calibration
-- commits: steps 1-2: the `feat(frontend)` API wiring commit; steps 3-5 + history pending
+- commits: 01040e1 steps 1-2 and the `feat(frontend)` steps 3-5 + history commit
 - verifier (run by the orchestrator):
 
 ```text
 $ npx vitest run --project frontend
- Test Files  16 passed (16)
-      Tests  140 passed (140)
+ Test Files  19 passed (19)
+      Tests  183 passed (183)
 $ npx vue-tsc --noEmit -p frontend -> exit 0; npm run build -w frontend -> exit 0
-screenshots reviewed: step 1 (counts 6 / 2 as separate tiles, labels placed without overlap), step 2 (registry, ordered ports, compiled graph, eligibility table)
-open contract items for the next server/frontend pass: kernel payload and prior shapes in types, world re-import invalidating the model, model/compile status on the project wire shape, a project task listing for resumable extraction polling
+screenshots reviewed: step 3 (baseline vs intervention bars on a fixed 0-100% axis, 25% vs 63% resolved at step 2, model-based intervention badge, uncertainty missing, provenance), step 4 (verbatim "In this model" statements, validation metrics missing)
 ```
 
 ### N10 — End-to-end worked example

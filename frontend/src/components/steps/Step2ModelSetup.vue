@@ -29,7 +29,7 @@ import ExamplePicker from "./ExamplePicker.vue";
 import StepPanel from "./StepPanel.vue";
 
 const props = defineProps<{ projectId: string; completed: boolean }>();
-const emit = defineEmits<{ complete: []; incomplete: [] }>();
+const emit = defineEmits<{ complete: []; incomplete: []; "refresh-project": [] }>();
 const { t } = useI18n();
 const route = useRoute();
 
@@ -133,6 +133,7 @@ async function putModel(body: ModelImport, action: Action, fromExample: string |
     projectStore.setLastCompile(null);
     if (fromExample !== null) projectStore.setExampleName(fromExample);
     emit("incomplete");
+    emit("refresh-project");
     await Promise.all([loadModelLists(id), graph.reload()]);
     return true;
   } catch (caught) {
@@ -201,6 +202,7 @@ async function compile(): Promise<void> {
     // Completion follows the last compile (see `stepDone`); a failed compile withdraws it.
     projectStore.setLastCompile(result);
     if (!result.ok) emit("incomplete");
+    emit("refresh-project");
     await graph.reload();
   } catch (caught) {
     if (unmounted) return;
@@ -213,8 +215,21 @@ async function compile(): Promise<void> {
   }
 }
 
-/** The offline demo shows the bundled, already-compiled example plan, which stands in for a compile. */
-const stepDone = computed(() => lastCompile.value?.ok === true || (demo && graph.isExample.value));
+/** The server says the current model compiled (`last_compile_ok` is `true` for its `model_version`). */
+const serverCompiled = computed(() => {
+  const project = projectStore.state.project;
+  if (project === null || project.project_id !== props.projectId) return false;
+  return project.last_compile_ok === true && (project.model_version ?? null) !== null;
+});
+
+/**
+ * Done while the last compile of the current model succeeded: this session's
+ * compile when there is one, else the server's record. The offline demo shows
+ * the bundled, already-compiled example plan, which stands in for a compile.
+ */
+const stepDone = computed(
+  () => (demo && graph.isExample.value) || (lastCompile.value !== null ? lastCompile.value.ok : serverCompiled.value),
+);
 
 watch(
   stepDone,
