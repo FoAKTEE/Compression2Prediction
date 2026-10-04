@@ -10,7 +10,9 @@ import type { Origin } from "@c2p/core";
 import { METRIC_MISSING, METRIC_PLUS_INF } from "../wire.js";
 import type {
   CalibrationSummary,
+  Conditioning,
   EffectStatus,
+  EvidenceObservation,
   ForecastReportBody,
   ForecastUncertainty,
   HorizonDistribution,
@@ -149,6 +151,23 @@ function effectStatus(v: unknown, field: string): EffectStatus {
   return v as EffectStatus;
 }
 
+const CONDITIONINGS: readonly Conditioning[] = ["none", "evidence"];
+
+function conditioningOf(v: unknown, field: string): Conditioning {
+  if (!CONDITIONINGS.includes(v as Conditioning)) throw new ValueError(`${field}: expected one of ${CONDITIONINGS.join(", ")}`);
+  return v as Conditioning;
+}
+
+function evidenceOf(e: EvidenceObservation, where: string): EvidenceObservation {
+  if (!isPlainObject(e)) throw new ValueError(`${where}: expected an object`);
+  return {
+    variable: asStr(e.variable, `${where}.variable`),
+    entity_id: asStr(e.entity_id, `${where}.entity_id`),
+    time_index: count(e.time_index, `${where}.time_index`),
+    value: asStr(e.value, `${where}.value`),
+  };
+}
+
 function statementOf(s: ReportStatement, where: string): ReportStatement {
   const text = asStr(s.text, `${where}.text`);
   if (!text.startsWith(PREFIX) || FORBIDDEN.test(text)) {
@@ -179,6 +198,7 @@ function extensions(r: ReportExtensions): ReportExtensions {
   if (r.base_scenario_id !== undefined) out.base_scenario_id = asStr(r.base_scenario_id, "base_scenario_id");
   if (r.query_kind !== undefined) out.query_kind = asStr(r.query_kind, "query_kind") as QueryKind;
   if (r.effect_status !== undefined) out.effect_status = effectStatus(r.effect_status, "effect_status");
+  if (r.conditioning !== undefined) out.conditioning = conditioningOf(r.conditioning, "conditioning");
   if (r.step_minutes !== undefined) out.step_minutes = r.step_minutes === null ? null : count(r.step_minutes, "step_minutes");
   if (r.plan_version !== undefined) out.plan_version = asStr(r.plan_version, "plan_version");
   if (r.graph_hash !== undefined) out.graph_hash = asStr(r.graph_hash, "graph_hash");
@@ -201,6 +221,11 @@ function extensions(r: ReportExtensions): ReportExtensions {
         origin: p.origin,
       })),
       interventions: [...list<Intervention>(a.interventions, "assumptions.interventions")],
+      // Reports stored before D26 carry no evidence: they were never conditioned.
+      evidence:
+        a.evidence === undefined
+          ? []
+          : list<EvidenceObservation>(a.evidence, "assumptions.evidence").map((e, i) => evidenceOf(e, `assumptions.evidence[${i}]`)),
       notes: list<string>(a.notes, "assumptions.notes").map((s, i) => asStr(s, `assumptions.notes[${i}]`)),
     };
   }

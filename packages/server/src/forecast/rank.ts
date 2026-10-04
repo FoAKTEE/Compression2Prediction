@@ -11,6 +11,9 @@
  * - one single-node certificate per key with an unknown constant replacement
  *   (local defect 1), scoped to the model's initial law, the replayed
  *   interventions, the horizon, and no conditioning.
+ * A run conditioned on evidence (D26) gets the same scores and bounds but no
+ * certificate: `certificate_scope` is null, nothing is certified prunable, and
+ * the note says why (the bounds are unconditioned; core refuses them too).
  * Scores order work only: kernels are hashed before and after and must match.
  */
 import {
@@ -59,6 +62,10 @@ export const RANK_DAMPING = 0.85;
 export const RANK_TOLERANCE = 1e-10;
 export const RANK_VERSION = "rank.v1";
 export const RANK_NOTE = "Scores order computation and review only; they are not causal effects and never change kernel probabilities.";
+/** Appended to the note for a conditioned run. */
+export const RANK_CONDITIONED_NOTE =
+  "Pruning certificates do not apply to conditioned queries: the influence bounds are unconditioned, and rare evidence can " +
+  "amplify any change, so this run's entries are never certified prunable.";
 
 const integrityError = (message: string) => new HttpError(500, "integrity_error", message);
 
@@ -215,7 +222,7 @@ export function rankRun(ctx: AppContext, run: ForecastRun, scenario: RankScenari
   const boundsHash = boundsArtifact(bounds, envelope, { horizon: c.payload.horizon_steps, interventions_ref: intervened }).meta.content_hash;
   const w = new Map(bounds.bounds.map(([key, v]) => [variableKeyString(key), v] as const));
   const eps = Rational.parse(String(ctx.config.rank.pruneEpsTv));
-  // Certificates cover unconditioned queries only; forecast runs condition on nothing.
+  // Certificates cover unconditioned queries only; anything but an explicit "none" counts as conditioned.
   const evidencePresent = stored.prediction_scope?.conditioning !== "none";
   const scopeInput: CertificateScopeInput = {
     initial: c.model.model.initial.map((p) => [p.key, p.distribution] as const),
@@ -270,7 +277,7 @@ export function rankRun(ctx: AppContext, run: ForecastRun, scenario: RankScenari
     eps_tv: ctx.config.rank.pruneEpsTv,
     score_artifact_hash: scores.meta.content_hash,
     bounds_hash: boundsHash,
-    note: RANK_NOTE,
+    note: evidencePresent ? `${RANK_NOTE} ${RANK_CONDITIONED_NOTE}` : RANK_NOTE,
     certificate_scope: scope,
   };
 }

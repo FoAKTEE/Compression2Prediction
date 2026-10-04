@@ -4,14 +4,15 @@ import { useI18n } from "vue-i18n";
 import type { ForecastResult } from "../../api/types";
 import DistributionChart, { type ChartSeries } from "./DistributionChart.vue";
 import EffectBadge from "./EffectBadge.vue";
-import { describeIntervention, formatTimestamp, shortHash } from "./format";
+import { describeEvidence, describeIntervention, formatTimestamp, shortHash } from "./format";
 import ProvenancePanel from "./ProvenancePanel.vue";
 import UncertaintyPanel from "./UncertaintyPanel.vue";
 
 /**
  * One forecast run as the server returned it: baseline and intervention
- * distributions side by side, the effect status, provenance, uncertainty
- * metadata, and the exact model and run references.
+ * distributions side by side, the effect status, the evidence every scenario
+ * is conditioned on, provenance, uncertainty metadata, and the exact model and
+ * run references.
  */
 const props = withDefaults(
   defineProps<{
@@ -24,13 +25,17 @@ const props = withDefaults(
 );
 const { t, locale } = useI18n();
 
-/** Baseline first, intervention second, each with its fixed tone. */
+/** The evidence every scenario is conditioned on (an older server sends none). */
+const evidence = computed(() => props.result.prediction_scope?.evidence ?? []);
+const conditioned = computed(() => props.result.prediction_scope?.conditioning === "evidence" || evidence.value.length > 0);
+
+/** Baseline first, intervention second, each with its fixed tone; both read "conditional" under evidence. */
 const series = computed<ChartSeries[]>(() => {
   const r = props.result;
   const out: ChartSeries[] = [
     {
       id: "baseline",
-      label: t("forecast.series.baseline", { scenario: r.baseline.scenario_id }),
+      label: t(conditioned.value ? "forecast.series.conditionalBaseline" : "forecast.series.baseline", { scenario: r.baseline.scenario_id }),
       tone: "baseline",
       byHorizon: r.baseline.by_horizon,
     },
@@ -38,7 +43,9 @@ const series = computed<ChartSeries[]>(() => {
   if (r.intervention) {
     out.push({
       id: "intervention",
-      label: t("forecast.series.intervention", { scenario: r.intervention.scenario_id }),
+      label: t(conditioned.value ? "forecast.series.conditionalIntervention" : "forecast.series.intervention", {
+        scenario: r.intervention.scenario_id,
+      }),
       tone: "intervention",
       byHorizon: r.intervention.by_horizon,
     });
@@ -67,8 +74,13 @@ const hashes = computed(() => {
     <header class="result__header">
       <div class="result__title">
         <span class="mono result__scenario">{{ result.scenario_id }}</span>
-        <EffectBadge :status="result.effect_status" />
-        <span class="badge">{{ t(`forecast.queryKind.${result.query_kind}`) }}</span>
+        <EffectBadge :status="result.effect_status" :conditioned="conditioned" />
+        <span v-if="result.query_kind !== 'conditional'" class="badge" data-testid="query-kind-badge">
+          {{ t(`forecast.queryKind.${result.query_kind}`) }}
+        </span>
+        <span v-if="conditioned" class="badge result__conditional" data-testid="conditional-badge" :title="t('forecast.form.evidence.rule')">
+          {{ t("forecast.queryKind.conditional") }}
+        </span>
         <span v-if="result.status !== 'completed'" class="badge">{{ t(`forecast.runStatus.${result.status}`) }}</span>
       </div>
       <p class="result__meta mono">
@@ -92,6 +104,15 @@ const hashes = computed(() => {
         <span class="chip__key">{{ t("forecast.result.held") }}</span>{{ describeIntervention(iv) }}
       </li>
     </ul>
+
+    <div v-if="conditioned" class="result__evidence" data-testid="result-evidence">
+      <ul class="result__interventions">
+        <li v-for="(e, index) in evidence" :key="index" class="chip" data-testid="result-evidence-item">
+          <span class="chip__key">{{ t("forecast.result.observed") }}</span>{{ describeEvidence(e) }}
+        </li>
+      </ul>
+      <p class="step-hint result__effect-note">{{ t("forecast.result.conditionalNote") }}</p>
+    </div>
 
     <DistributionChart
       :series="series"
@@ -204,6 +225,15 @@ const hashes = computed(() => {
 .result__interventions .chip {
   white-space: normal;
   overflow-wrap: anywhere;
+}
+
+.result__evidence {
+  display: grid;
+  gap: var(--c2p-space-2);
+}
+
+.result__conditional {
+  border-color: var(--c2p-series-baseline);
 }
 
 .result__refs {

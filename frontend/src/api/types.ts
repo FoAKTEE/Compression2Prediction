@@ -532,7 +532,28 @@ export interface Intervention {
   end_step_exclusive: number;
 }
 
-export type QueryKind = "observational" | "interventional";
+/**
+ * `observational`: no evidence, no interventions. `conditional`: evidence and
+ * no interventions. `interventional`: at least one intervention, with or
+ * without evidence (the intervened model is then conditioned on it).
+ */
+export type QueryKind = "observational" | "conditional" | "interventional";
+
+/**
+ * One observed value of a plan key `(model scenario, variable, entity_id,
+ * time_index)` (guide §8.1). Evidence updates beliefs; it never changes a
+ * mechanism. Every scenario of a run is conditioned on the same evidence.
+ */
+export interface EvidenceObservation {
+  variable: string;
+  entity_id: string;
+  time_index: number;
+  /** A value of the variable's domain for the entity's kind. */
+  value: string;
+}
+
+/** `evidence` when a run is conditioned on at least one observation. */
+export type Conditioning = "none" | "evidence";
 
 export interface ForecastRequest {
   scenario_id?: string;
@@ -545,6 +566,13 @@ export interface ForecastRequest {
   /** Particle count for approximate inference; the server enforces its bound. */
   particles?: number;
   interventions: Intervention[];
+  /**
+   * Evidence to condition on: distinct keys, never the target at a forecast
+   * step. The server answers 422 `unknown_evidence_key`,
+   * `out_of_domain_evidence`, `evidence_on_target`, or `impossible_evidence`
+   * (zero probability in the model; never repaired). Omitted: no conditioning.
+   */
+  evidence?: EvidenceObservation[];
 }
 
 export type RunStatus = "pending" | "running" | "completed" | "failed";
@@ -633,11 +661,17 @@ export interface PredictionScope {
   step_minutes: number | null;
   information_cutoff: Timestamp | null;
   initial_belief: { requested_ref: string | null; source: "model_initial"; keys: VariableKey[] };
-  conditioning: "none";
+  conditioning: Conditioning;
+  /** The evidence every scenario is conditioned on (absent from an older server, which never conditions). */
+  evidence?: EvidenceObservation[];
   interpretation: string;
 }
 
-/** One scenario of a run: per-step distributions over the target's ordered domain. */
+/**
+ * One scenario of a run: per-step distributions over the target's ordered
+ * domain. Under evidence the baseline is the conditional baseline
+ * (`query_kind` `conditional`) and the intervention is conditioned too.
+ */
 export interface ScenarioResult {
   scenario_id: string;
   is_baseline: boolean;
@@ -889,6 +923,8 @@ export interface ReportAssumptions {
   kernels: KernelProvenance[];
   priors: ReportPrior[];
   interventions: Intervention[];
+  /** The evidence the run is conditioned on (absent from an older server, which never conditions). */
+  evidence?: EvidenceObservation[];
   notes: string[];
 }
 
@@ -919,6 +955,8 @@ export interface ReportExtensions {
   base_scenario_id?: string;
   query_kind?: QueryKind;
   effect_status?: EffectStatus;
+  /** `evidence` when every scenario is conditioned on `assumptions.evidence`. */
+  conditioning?: Conditioning;
   step_minutes?: number | null;
   plan_version?: string;
   graph_hash?: string;

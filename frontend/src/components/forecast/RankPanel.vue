@@ -15,7 +15,8 @@ import { shortHash } from "./format";
  * changes a kernel; the server says whether the hashes stayed the same. A
  * certified-prunable flag holds only within the response's certificate scope
  * (initial law, interventions, horizon, no conditioning), so its scope hash
- * and conditioning are shown next to every certified entry.
+ * and conditioning are shown next to every certified entry. A run conditioned
+ * on evidence has no scope and nothing certified; the server's note says why.
  */
 const props = defineProps<{ projectId: string | null; runId: string | null; demo: boolean }>();
 const { t } = useI18n();
@@ -109,6 +110,7 @@ const scope = computed(() => diagnostics.value?.certificate_scope ?? null);
           <dd v-else data-testid="rank-scope">{{ t("step5.rank.noScope") }}</dd>
         </div>
       </dl>
+      <p v-if="diagnostics.note" class="step-hint rank__note" data-testid="rank-note">{{ diagnostics.note }}</p>
       <div class="table-scroll">
         <table class="data-table" data-testid="rank-table">
           <thead>
@@ -146,6 +148,10 @@ const scope = computed(() => diagnostics.value?.certificate_scope ?? null);
   display: grid;
   gap: var(--c2p-space-3);
   min-width: 0;
+}
+
+.rank__note {
+  font-size: var(--c2p-text-xs);
 }
 
 .rank__scope {

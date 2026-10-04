@@ -5,7 +5,7 @@ import type { ForecastReportBody } from "../../api/types";
 import { formatMarker, formatMetric, type MetricText } from "../../composables/metric";
 import DistributionChart, { type ChartSeries } from "../forecast/DistributionChart.vue";
 import EffectBadge from "../forecast/EffectBadge.vue";
-import { describeIntervention, formatTimestamp, shortHash } from "../forecast/format";
+import { describeEvidence, describeIntervention, formatTimestamp, shortHash } from "../forecast/format";
 import ProvenancePanel from "../forecast/ProvenancePanel.vue";
 import UncertaintyPanel from "../forecast/UncertaintyPanel.vue";
 
@@ -13,7 +13,8 @@ import UncertaintyPanel from "../forecast/UncertaintyPanel.vue";
  * A forecast report as the server serialized it (guide §10.9): target,
  * horizon, information cutoff, data origin, model version, validation
  * status, the server's statements verbatim, distributions by horizon, the
- * causal assumptions (kept apart from source-backed counts), and validation
+ * causal assumptions and the evidence the run is conditioned on (kept apart
+ * from source-backed counts), and validation
  * metrics. A metric that is `"missing"` reads "missing" and `"+inf"` reads as
  * an impossible outcome; neither is ever shown as a number. The UI composes
  * no numeric claim of its own.
@@ -21,12 +22,16 @@ import UncertaintyPanel from "../forecast/UncertaintyPanel.vue";
 const props = withDefaults(defineProps<{ report: ForecastReportBody; headingTag?: "h2" | "h3" }>(), { headingTag: "h3" });
 const { t, locale } = useI18n();
 
+/** The evidence every scenario is conditioned on (an older server sends none). */
+const evidence = computed(() => props.report.assumptions?.evidence ?? []);
+const conditioned = computed(() => props.report.conditioning === "evidence" || evidence.value.length > 0);
+
 const series = computed<ChartSeries[]>(() =>
   props.report.forecasts.map((f, i) => ({
     id: `${f.scenario_id}-${i}`,
     label: f.is_baseline
-      ? t("forecast.series.baseline", { scenario: f.scenario_id })
-      : t("forecast.series.intervention", { scenario: f.scenario_id }),
+      ? t(conditioned.value ? "forecast.series.conditionalBaseline" : "forecast.series.baseline", { scenario: f.scenario_id })
+      : t(conditioned.value ? "forecast.series.conditionalIntervention" : "forecast.series.intervention", { scenario: f.scenario_id }),
     tone: f.is_baseline ? "baseline" : "intervention",
     byHorizon: f.by_horizon,
   })),
@@ -88,8 +93,9 @@ function formatPrior(values: number[]): string {
         {{ t("reportBody.title", { variable: report.target_variable, entity: report.target_entity_id }) }}
       </component>
       <div class="report-body__badges">
-        <EffectBadge :status="report.effect_status ?? null" />
-        <span v-if="report.query_kind" class="badge">{{ t(`forecast.queryKind.${report.query_kind}`) }}</span>
+        <EffectBadge :status="report.effect_status ?? null" :conditioned="conditioned" />
+        <span v-if="report.query_kind && report.query_kind !== 'conditional'" class="badge">{{ t(`forecast.queryKind.${report.query_kind}`) }}</span>
+        <span v-if="conditioned" class="badge" data-testid="report-conditional-badge">{{ t("forecast.queryKind.conditional") }}</span>
       </div>
     </header>
 
@@ -252,6 +258,16 @@ function formatPrior(values: number[]): string {
             <li v-for="(iv, index) in report.assumptions.interventions" :key="index" class="mono">{{ describeIntervention(iv) }}</li>
           </ul>
           <p v-else class="step-hint" data-testid="assumption-no-interventions">{{ t("reportBody.assumptions.noInterventions") }}</p>
+        </div>
+        <div class="report-body__sub">
+          <h5 class="eyebrow">{{ t("reportBody.assumptions.evidence") }}</h5>
+          <template v-if="evidence.length">
+            <ul class="report-body__list" data-testid="assumption-evidence">
+              <li v-for="(e, index) in evidence" :key="index" class="mono" data-testid="assumption-evidence-item">{{ describeEvidence(e) }}</li>
+            </ul>
+            <p class="step-hint report-body__small">{{ t("forecast.form.evidence.rule") }}</p>
+          </template>
+          <p v-else class="step-hint" data-testid="assumption-no-evidence">{{ t("reportBody.assumptions.noEvidence") }}</p>
         </div>
         <div v-if="report.assumptions.notes.length" class="report-body__sub">
           <h5 class="eyebrow">{{ t("reportBody.assumptions.notes") }}</h5>

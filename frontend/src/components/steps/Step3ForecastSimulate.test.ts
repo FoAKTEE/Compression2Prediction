@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../api/client";
 import { getRankDiagnostics, getRun, listRuns, runForecast } from "../../api/forecast";
 import { getModel, listVariables } from "../../api/model";
-import type { ForecastRequest, ModelResponse, Project, WorldResponse } from "../../api/types";
+import type { EvidenceObservation, ForecastRequest, ForecastResult, ModelResponse, Project, WorldResponse } from "../../api/types";
 import { getWorld } from "../../api/world";
 import { projectStore } from "../../store/project";
 import { createTestPlugins } from "../../test-support";
@@ -313,5 +313,175 @@ describe("Step3ForecastSimulate: the offline example", () => {
     await wrapper.get("[data-testid='forecast-form']").trigger("submit");
     await flushPromises();
     expect(wrapper.get("[data-testid='demo-miss']").text()).toContain("No bundled result for this request");
+  });
+});
+
+// ---------------------------------------------------------------- evidence (conditioning)
+
+/** Adds an observation with the builder's defaults (a variable other than the target, at time index 0). */
+async function addEvidence(w: Wrapper) {
+  await w.get("[data-testid='add-evidence']").trigger("click");
+  return w.findAll("[data-testid='evidence-row']").at(-1)!;
+}
+
+async function choose(row: Awaited<ReturnType<typeof addEvidence>>, variable: string) {
+  await row.get("[data-testid='ev-variable']").setValue(variable);
+  await row.get("[data-testid='ev-variable']").trigger("change");
+}
+
+const CREW_HIGH: EvidenceObservation = { variable: "crew_capacity", entity_id: "ent_repair_crew", time_index: 1, value: "high" };
+
+/** A bundled run as the server returns it when every scenario is conditioned on `evidence`. */
+function conditionedRun(runId: string, evidence: EvidenceObservation[]): ForecastResult {
+  const run = exampleRunResult(runId)!;
+  return {
+    ...run,
+    run_id: `${run.run_id}_conditioned`,
+    query_kind: run.intervention ? "interventional" : "conditional",
+    baseline: { ...run.baseline, query_kind: "conditional" },
+    prediction_scope: { ...run.prediction_scope, conditioning: "evidence", evidence },
+  };
+}
+
+describe("Step3ForecastSimulate: evidence (conditioning)", () => {
+  it("builds observations from each variable's domain, states that evidence never changes mechanisms, and sends a conditional request", async () => {
+    vi.mocked(runForecast).mockResolvedValue(conditionedRun(EXAMPLE_BASELINE_RUN_ID, [CREW_HIGH]));
+    const wrapper = await mountStep();
+    const builder = wrapper.get("[data-testid='evidence-builder']");
+    expect(builder.get("legend").text()).toBe("Evidence (conditioning)");
+    expect(builder.get("[data-testid='evidence-principle']").text()).toBe("Evidence updates beliefs; it never changes mechanisms.");
+    expect(builder.get("[data-testid='no-evidence']").text()).toContain("not conditioned");
+
+    const row = await addEvidence(wrapper);
+    // Defaults to an input other than the target, with the values of its kind's domain only.
+    expect((row.get("[data-testid='ev-variable']").element as HTMLSelectElement).value).toBe("crew_capacity");
+    expect(row.findAll("[data-testid='ev-value-option']").map((o) => o.text())).toEqual(["normal", "high"]);
+    await choose(row, "supply_status");
+    expect(row.findAll("[data-testid='ev-entity'] option").map((o) => o.attributes("value"))).toEqual(["ent_east_depot"]);
+    expect(row.findAll("[data-testid='ev-value-option']").map((o) => o.text())).toEqual(["available"]);
+    // A value outside the domain is no option; forced in, it is flagged and blocks the request.
+    await row.get("[data-testid='ev-value']").setValue("maximal");
+    expect((row.get("[data-testid='ev-value']").element as HTMLSelectElement).value).not.toBe("maximal");
+    expect(row.findAll("[data-testid='ev-value-option']").map((o) => o.text())).toEqual(["available"]);
+    expect(wrapper.get("[data-testid='submit-forecast']").attributes("disabled")).toBeDefined();
+    await choose(row, "incident_status");
+    expect(row.findAll("[data-testid='ev-value-option']").map((o) => o.text())).toEqual(["unacknowledged", "acknowledged", "resolved"]);
+    expect(row.get("[data-testid='ev-error-value']").attributes("style")).toContain("display: none");
+
+    // The target at a forecast step (1..2) is never evidence; time indices stay within the model's horizon.
+    const submit = wrapper.get("[data-testid='submit-forecast']");
+    await row.get("[data-testid='ev-time']").setValue(1);
+    expect(row.get("[data-testid='ev-error-key']").text()).toContain("forecast target at step 1");
+    expect(submit.attributes("disabled")).toBeDefined();
+    await row.get("[data-testid='ev-time']").setValue(3);
+    expect(row.get("[data-testid='ev-error-time']").text()).toContain("at most 2");
+    await row.get("[data-testid='ev-time']").setValue(-1);
+    expect(row.get("[data-testid='ev-error-time']").text()).toContain("at least 0");
+    await wrapper.get("[data-testid='forecast-form']").trigger("submit");
+    expect(runForecast).not.toHaveBeenCalled();
+
+    await choose(row, "crew_capacity");
+    await row.get("[data-testid='ev-time']").setValue(1);
+    await row.get("[data-testid='ev-value']").setValue("high");
+    for (const field of ["variable", "entity", "value", "time", "key"]) {
+      expect(row.get(`[data-testid='ev-error-${field}']`).attributes("style")).toContain("display: none");
+    }
+    expect(wrapper.get("[data-testid='query-kind']").text()).toBe("conditional");
+    expect(wrapper.get("[data-testid='no-interventions']").text()).toContain("conditional forecast");
+    expect(submit.attributes("disabled")).toBeUndefined();
+    await wrapper.get("[data-testid='forecast-form']").trigger("submit");
+    await flushPromises();
+    expect(runForecast).toHaveBeenCalledWith("p-1", {
+      query_kind: "conditional",
+      target_entity_id: "ent_incident_001",
+      target_variable: "incident_status",
+      horizon_steps: 2,
+      interventions: [],
+      evidence: [CREW_HIGH],
+    });
+
+    // The result is labeled conditional, never observational, and lists its evidence.
+    const result = wrapper.get("[data-testid='forecast-result']");
+    expect(result.get("[data-testid='conditional-badge']").text()).toBe("conditional");
+    expect(result.find("[data-testid='query-kind-badge']").exists()).toBe(false);
+    expect(result.get("[data-testid='effect-badge']").text()).toBe("conditional (no intervention)");
+    expect(result.get("[data-testid='result-evidence-item']").text()).toBe("observedcrew_capacity = high · ent_repair_crew · t=1");
+    expect(result.get("[data-testid='result-evidence']").text()).toContain("never changes mechanisms");
+    expect(result.get("[data-testid='chart-description']").text()).toContain("Conditional baseline (baseline)");
+    expect(wrapper.get("[data-testid='run-row'] [data-testid='effect-badge']").text()).toBe("conditional (no intervention)");
+  });
+
+  it("flags a duplicate observation, and labels interventions with evidence as interventional and conditional", async () => {
+    vi.mocked(runForecast).mockResolvedValue(conditionedRun(EXAMPLE_INTERVENTION_RUN_ID, [CREW_HIGH]));
+    const wrapper = await mountStep();
+    const first = await addEvidence(wrapper);
+    const second = await addEvidence(wrapper);
+    expect(first.get("[data-testid='ev-error-key']").attributes("style")).toContain("display: none");
+    expect(second.get("[data-testid='ev-error-key']").text()).toContain("already fixes this variable, entity, and time index");
+    expect(wrapper.get("[data-testid='submit-forecast']").attributes("disabled")).toBeDefined();
+    await second.get("[data-testid='remove-evidence']").trigger("click");
+    expect(wrapper.findAll("[data-testid='evidence-row']")).toHaveLength(1);
+
+    const iv = await addIntervention(wrapper);
+    await iv.get("[data-testid='iv-value']").setValue("high");
+    await iv.get("[data-testid='iv-end']").setValue(1);
+    const row = wrapper.get("[data-testid='evidence-row']");
+    await row.get("[data-testid='ev-time']").setValue(1);
+    await row.get("[data-testid='ev-value']").setValue("high");
+    expect(wrapper.get("[data-testid='query-kind']").text()).toBe("interventional · conditional");
+    await wrapper.get("[data-testid='forecast-form']").trigger("submit");
+    await flushPromises();
+    expect(vi.mocked(runForecast).mock.calls[0]![1]).toMatchObject({
+      query_kind: "interventional",
+      interventions: [{ target_variable: "crew_capacity", value: "high", start_step: 0, end_step_exclusive: 1 }],
+      evidence: [CREW_HIGH],
+    });
+
+    const result = wrapper.get("[data-testid='forecast-result']");
+    expect(result.get("[data-testid='query-kind-badge']").text()).toBe("interventional");
+    expect(result.get("[data-testid='conditional-badge']").text()).toBe("conditional");
+    expect(result.get("[data-testid='effect-badge']").text()).toBe("model-based intervention");
+    const legend = result.get("[data-testid='chart-legend']").text();
+    expect(legend).toContain("Conditional baseline (baseline)");
+    expect(legend).toContain("Intervention, conditional (extra_crew)");
+  });
+
+  it("an unconditioned run shows no conditional badge or evidence", async () => {
+    vi.mocked(runForecast).mockResolvedValue(exampleRunResult(EXAMPLE_INTERVENTION_RUN_ID)!);
+    const wrapper = await mountStep();
+    await wrapper.get("[data-testid='forecast-form']").trigger("submit");
+    await flushPromises();
+    expect(vi.mocked(runForecast).mock.calls[0]![1]).not.toHaveProperty("evidence");
+    const result = wrapper.get("[data-testid='forecast-result']");
+    expect(result.find("[data-testid='conditional-badge']").exists()).toBe(false);
+    expect(result.find("[data-testid='result-evidence']").exists()).toBe(false);
+  });
+});
+
+describe("ForecastForm: a prefilled out-of-domain observation", () => {
+  it("is flagged and never sent", async () => {
+    const { plugins } = await createTestPlugins();
+    const initial: ForecastRequest = {
+      query_kind: "conditional",
+      target_entity_id: "ent_incident_001",
+      target_variable: "incident_status",
+      horizon_steps: 2,
+      interventions: [],
+      evidence: [{ ...CREW_HIGH, value: "maximal" }],
+    };
+    const wrapper = mount(ForecastForm, {
+      props: { entities: exampleForecastEntities(), variables: exampleForecastVariables(), horizonMax: 2, initial },
+      global: { plugins: [...plugins] },
+    });
+    await flushPromises();
+    expect(wrapper.get("[data-testid='ev-value-invalid']").text()).toContain("maximal (not in the domain)");
+    expect(wrapper.get("[data-testid='ev-value-invalid']").attributes("disabled")).toBeDefined();
+    expect(wrapper.get("[data-testid='ev-error-value']").text()).toContain("maximal is not in this variable's domain");
+    await wrapper.get("[data-testid='forecast-form']").trigger("submit");
+    expect(wrapper.emitted("submit")).toBeUndefined();
+
+    await wrapper.get("[data-testid='ev-value']").setValue("high");
+    await wrapper.get("[data-testid='forecast-form']").trigger("submit");
+    expect(wrapper.emitted("submit")?.[0]?.[0]).toMatchObject({ query_kind: "conditional", evidence: [CREW_HIGH] });
   });
 });

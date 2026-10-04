@@ -51,7 +51,7 @@ watch(
   { immediate: true },
 );
 
-/** The selected run's request, editable: same target and horizon, its hard interventions. */
+/** The selected run's request, editable: same target and horizon, its hard interventions and evidence. */
 function requestFrom(run: ForecastResult): ForecastRequest {
   const scope = run.prediction_scope;
   return {
@@ -62,6 +62,7 @@ function requestFrom(run: ForecastResult): ForecastRequest {
     ...(scope?.step_minutes ? { step_minutes: scope.step_minutes } : {}),
     ...(scope?.initial_belief?.requested_ref ? { initial_belief_ref: scope.initial_belief.requested_ref } : {}),
     interventions: run.interventions.map((iv) => ({ ...iv })),
+    ...(scope?.evidence?.length ? { evidence: scope.evidence.map((e) => ({ ...e })) } : {}),
   };
 }
 

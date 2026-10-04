@@ -293,9 +293,9 @@ export function exampleRunSummaries(): ForecastRunSummary[] {
 }
 
 /**
- * The bundled run that a request reproduces (same target, horizon, and
- * interventions; the scenario label is ignored), or `null`: offline, only
- * these two requests have results.
+ * The bundled run that a request reproduces (same target, horizon,
+ * interventions, and evidence; the scenario label is ignored), or `null`:
+ * offline, only these two unconditioned requests have results.
  */
 export function exampleRunFor(request: ForecastRequest): ForecastResult | null {
   const shape = (r: ForecastRequest) =>
@@ -305,6 +305,7 @@ export function exampleRunFor(request: ForecastRequest): ForecastResult | null {
       r.target_variable,
       r.horizon_steps,
       r.interventions.map((iv) => [iv.kind, iv.target_variable, iv.target_entity_id ?? CREW, iv.value, iv.start_step, iv.end_step_exclusive]),
+      (r.evidence ?? []).map((e) => [e.variable, e.entity_id, e.time_index, e.value]),
     ]);
   const wanted = shape(request);
   if (wanted === shape(exampleInterventionRequest())) return exampleRunResult(EXAMPLE_INTERVENTION_RUN_ID);

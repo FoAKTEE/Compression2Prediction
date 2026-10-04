@@ -1,10 +1,11 @@
 /**
  * Report statement templates (guide §10.9). Every statement is about
  * probability mass in the stated model, e.g. "In this model, 63% of the
- * two-step probability mass is in the resolved state." None claims a
+ * two-step probability mass is in the resolved state." Under evidence it reads
+ * "In this model, conditional on <evidence>, ..." (D26). None claims a
  * real-world probability; the serializer rejects text that does.
  */
-import type { HorizonDistribution, Intervention } from "../wire.js";
+import type { EvidenceObservation, HorizonDistribution, Intervention } from "../wire.js";
 import type { ReportStatement } from "./serialize.js";
 
 const WORDS = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"];
@@ -30,11 +31,18 @@ export function describeInterventions(interventions: readonly Intervention[]): s
     .join("; ");
 }
 
+/** `pump_alarm = on for ent_pump_station at time index 1 and ...`, in request order. */
+export function describeEvidence(evidence: readonly EvidenceObservation[]): string {
+  return evidence.map((e) => `${e.variable} = ${e.value} for ${e.entity_id} at time index ${e.time_index}`).join(" and ");
+}
+
 export interface StatementInput {
   readonly horizon_steps: number;
   readonly baseline: { readonly scenario_id: string; readonly by_horizon: readonly HorizonDistribution[] };
   readonly intervention: { readonly scenario_id: string; readonly by_horizon: readonly HorizonDistribution[] } | null;
   readonly interventions: readonly Intervention[];
+  /** Evidence every scenario is conditioned on; absent or empty for none. */
+  readonly evidence?: readonly EvidenceObservation[];
 }
 
 function last(by: readonly HorizonDistribution[], h: number): HorizonDistribution {
@@ -43,17 +51,23 @@ function last(by: readonly HorizonDistribution[], h: number): HorizonDistributio
   return found;
 }
 
-/** One statement per target value at the final step for each scenario, then baseline-vs-intervention comparisons. */
+/**
+ * One statement per target value at the final step for each scenario, then
+ * baseline-vs-intervention comparisons. Under evidence every statement is
+ * conditional on it, the intervention's and the comparison's included.
+ */
 export function buildStatements(input: StatementInput): ReportStatement[] {
   const h = input.horizon_steps;
   const phrase = stepPhrase(h);
+  const evidence = input.evidence ?? [];
+  const lead = evidence.length > 0 ? `In this model, conditional on ${describeEvidence(evidence)}, ` : "In this model, ";
   const base = last(input.baseline.by_horizon, h);
   const out: ReportStatement[] = base.distribution.map((e) => ({
     kind: "distribution",
     scenario_id: input.baseline.scenario_id,
     horizon_step: h,
     value: e.value,
-    text: `In this model, ${percent(e.probability)} of the ${phrase} probability mass is in the ${e.value} state.`,
+    text: `${lead}${percent(e.probability)} of the ${phrase} probability mass is in the ${e.value} state.`,
   }));
   if (input.intervention === null) return out;
   const scope = describeInterventions(input.interventions);
@@ -64,7 +78,7 @@ export function buildStatements(input: StatementInput): ReportStatement[] {
       scenario_id: input.intervention.scenario_id,
       horizon_step: h,
       value: e.value,
-      text: `In this model, under the model-based intervention (${scope}), ${percent(e.probability)} of the ${phrase} probability mass is in the ${e.value} state.`,
+      text: `${lead}under the model-based intervention (${scope}), ${percent(e.probability)} of the ${phrase} probability mass is in the ${e.value} state.`,
     });
   }
   done.distribution.forEach((e, i) => {
@@ -75,7 +89,7 @@ export function buildStatements(input: StatementInput): ReportStatement[] {
       horizon_step: h,
       value: e.value,
       text:
-        `In this model, the ${phrase} probability mass in the ${e.value} state is ${percent(e.probability)} under the ` +
+        `${lead}the ${phrase} probability mass in the ${e.value} state is ${percent(e.probability)} under the ` +
         `model-based intervention and ${percent(b.probability)} without it; the difference follows from the stated ` +
         "kernels and is not an identified causal effect.",
     });
@@ -83,10 +97,11 @@ export function buildStatements(input: StatementInput): ReportStatement[] {
   return out;
 }
 
-export function statementPolicy(validationStatus: string): string {
+export function statementPolicy(validationStatus: string, conditioned = false): string {
   return (
     "Statements describe probability mass in this model only. " +
     `Validation status: ${validationStatus}; parameter uncertainty and model error are missing, and no backtest exists. ` +
-    "No statement is a probability about the actual world or an empirical frequency."
+    "No statement is a probability about the actual world or an empirical frequency." +
+    (conditioned ? " Conditional statements condition the model on the listed evidence; the evidence changes no mechanism." : "")
   );
 }

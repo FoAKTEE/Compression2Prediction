@@ -1,9 +1,9 @@
 /**
  * `/api/forecast`: request validation (bounds, half-open intervention windows,
- * query kind), exact forecast execution against the latest compiled plan
- * (a published run directory plus a report), run listing,
- * project-scoped run lookups, rank/influence diagnostics (D22), and the
- * synthetic incident backtest with its stored history (D24).
+ * evidence shape (D26), query kind), exact forecast execution against the
+ * latest compiled plan (a published run directory plus a report), run
+ * listing, project-scoped run lookups, rank/influence diagnostics (D22), and
+ * the synthetic incident backtest with its stored history (D24).
  */
 import { isPlainObject } from "@c2p/core";
 import type { FastifyInstance } from "fastify";
@@ -15,8 +15,9 @@ import { rankRun } from "../forecast/rank.js";
 import { executeForecast } from "../forecast/service.js";
 import type { ForecastResult } from "../forecast/types.js";
 import { nameParam } from "../ids.js";
-import { RANK_SCENARIOS } from "../wire.js";
+import { QUERY_KINDS, RANK_SCENARIOS } from "../wire.js";
 import type {
+  EvidenceObservation,
   ForecastRequest,
   Intervention,
   InterventionKind,
@@ -41,6 +42,7 @@ const REQUEST_FIELDS = new Set([
   "step_minutes",
   "particles",
   "interventions",
+  "evidence",
 ]);
 const REQUIRED = ["query_kind", "target_entity_id", "target_variable", "horizon_steps", "interventions"];
 const INTERVENTION_FIELDS = new Set([
@@ -52,7 +54,7 @@ const INTERVENTION_FIELDS = new Set([
   "start_step",
   "end_step_exclusive",
 ]);
-const QUERY_KINDS: readonly QueryKind[] = ["observational", "interventional"];
+const EVIDENCE_FIELDS = new Set(["variable", "entity_id", "time_index", "value"]);
 const INTERVENTION_KINDS: readonly InterventionKind[] = ["hard", "mechanism", "policy"];
 /** Individual counterfactuals need a structural-noise model, which no model supplies (invariant 9). */
 const COUNTERFACTUAL_KINDS = new Set(["counterfactual", "individual_counterfactual"]);
@@ -123,6 +125,53 @@ function intervention(v: unknown, i: number, horizon: number): Intervention {
   return out;
 }
 
+/**
+ * One evidence observation's shape. Whether its key exists in the compiled
+ * plan, and whether its value is in that key's domain, is checked against the
+ * plan when the forecast runs.
+ */
+function evidenceItem(v: unknown, i: number): EvidenceObservation {
+  const where = `evidence[${i}]`;
+  if (!isPlainObject(v)) throw invalid(`${where}: expected an object`);
+  strictKeys(v, EVIDENCE_FIELDS, where);
+  for (const f of EVIDENCE_FIELDS) if (!(f in v)) throw invalid(`${where}: missing field ${f}`);
+  const time = int(v.time_index, `${where}.time_index`);
+  if (time < 0) throw invalid(`${where}.time_index: ${time} is negative`);
+  return {
+    variable: text(v.variable, `${where}.variable`),
+    entity_id: text(v.entity_id, `${where}.entity_id`),
+    time_index: time,
+    value: text(v.value, `${where}.value`),
+  };
+}
+
+/**
+ * Evidence list: distinct keys, never the target at a forecast step (the
+ * forecast would then be its own observation). Keys all share the model's
+ * scenario, so (variable, entity, time) identifies one.
+ */
+function evidenceList(v: unknown, req: ForecastRequest, bounds: Bounds): EvidenceObservation[] {
+  if (!Array.isArray(v)) throw invalid("evidence: expected an array");
+  if (v.length > bounds.maxEvidence) throw outOfBounds(`evidence: at most ${bounds.maxEvidence} observations per request`);
+  const seen = new Set<string>();
+  return v.map((raw, i) => {
+    const e = evidenceItem(raw, i);
+    const id = JSON.stringify([e.variable, e.entity_id, e.time_index]);
+    if (seen.has(id)) {
+      throw invalid(`evidence[${i}]: duplicate evidence for ${e.variable} of ${e.entity_id} at time index ${e.time_index}`);
+    }
+    seen.add(id);
+    if (e.variable === req.target_variable && e.entity_id === req.target_entity_id && e.time_index >= 1 && e.time_index <= req.horizon_steps) {
+      throw unprocessable(
+        "evidence_on_target",
+        `evidence[${i}]: ${e.variable} of ${e.entity_id} at time index ${e.time_index} is the target at a forecast step ` +
+          `(1..${req.horizon_steps}); observe another key, or a time index outside the forecast steps`,
+      );
+    }
+    return e;
+  });
+}
+
 /** Validate a forecast request; every failure is a 422. */
 export function validateForecastRequest(body: unknown, bounds: Bounds): ForecastRequest {
   if (!isPlainObject(body)) throw invalid("expected a JSON object");
@@ -154,12 +203,19 @@ export function validateForecastRequest(body: unknown, bounds: Bounds): Forecast
     throw outOfBounds(`interventions: at most ${bounds.maxInterventions} per request`);
   }
   req.interventions = body.interventions.map((v, i) => intervention(v, i, horizon));
-  if (req.query_kind === "observational" && req.interventions.length > 0) {
-    throw invalid("an observational query takes no interventions; use query_kind interventional");
+  const evidence = body.evidence === undefined ? [] : evidenceList(body.evidence, req, bounds);
+  if (evidence.length > 0) req.evidence = evidence;
+  if (req.query_kind !== "interventional" && req.interventions.length > 0) {
+    const article = req.query_kind === "observational" ? "an" : "a";
+    throw invalid(`${article} ${req.query_kind} query takes no interventions; use query_kind interventional`);
   }
   if (req.query_kind === "interventional" && req.interventions.length === 0) {
     throw invalid("an interventional query needs at least one intervention");
   }
+  if (req.query_kind === "observational" && evidence.length > 0) {
+    throw invalid("an observational query takes no evidence; use query_kind conditional (or interventional with interventions)");
+  }
+  if (req.query_kind === "conditional" && evidence.length === 0) throw invalid("a conditional query needs at least one evidence observation");
   return req;
 }
 

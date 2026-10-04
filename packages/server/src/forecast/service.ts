@@ -1,14 +1,26 @@
 /**
  * Forecast execution (guide §8, §11.1, §13). The target key
  * `(scenario, variable, entity, k)` is queried exactly at every step
- * k = 1..h with core `runQuery`: observationally for the baseline and, when
- * interventions are given, as a model-based intervention (hard assignment by
- * diagram surgery). The run is written to a run directory whose manifest is
+ * k = 1..h with core `runQuery`: observationally for the baseline (or
+ * conditionally, under evidence) and, when interventions are given, as a
+ * model-based intervention (hard assignment by diagram surgery) conditioned on
+ * the same evidence (D26). Evidence updates beliefs and never edits a
+ * mechanism. The run is written to a run directory whose manifest is
  * published last; a report is created for it, and both rows are recorded.
  */
 import { randomBytes } from "node:crypto";
-import { applyInterventions, contentHash, describeIntervention, initialLawHash, runQuery, ValueError, VERSION, variableKeyString } from "@c2p/core";
-import type { HardIntervention, Origin, Plan, Prior, QueryResult, Space, VariableKey } from "@c2p/core";
+import {
+  applyInterventions,
+  compareKeys,
+  contentHash,
+  describeIntervention,
+  initialLawHash,
+  runQuery,
+  ValueError,
+  VERSION,
+  variableKeyString,
+} from "@c2p/core";
+import type { EvidencePair, HardIntervention, Origin, Plan, Prior, QueryResult, Space, VariableKey } from "@c2p/core";
 import { as422, HttpError, notImplemented, unprocessable } from "../api/errors.js";
 import type { AppContext } from "../context.js";
 import { budgetFrom } from "../model/compile.js";
@@ -17,10 +29,10 @@ import { nowIso, transaction } from "../repos/db.js";
 import type { ProjectState } from "../repos/projects.js";
 import { serializeReport } from "../report/serialize.js";
 import type { ReportInput } from "../report/serialize.js";
-import { buildStatements, statementPolicy } from "../report/statements.js";
+import { buildStatements, describeEvidence, statementPolicy } from "../report/statements.js";
 import { RunDir } from "../store/index.js";
 import type { RunManifest } from "../store/index.js";
-import type { ForecastRequest, HorizonDistribution, Intervention } from "../wire.js";
+import type { EvidenceObservation, ForecastRequest, HorizonDistribution, Intervention, QueryKind } from "../wire.js";
 import { loadCompiledPlan } from "./plan.js";
 import type { CompiledPlan } from "./plan.js";
 import { METHOD_FIXED, METHOD_HAND_SPECIFIED, UNCERTAINTY_MISSING } from "./types.js";
@@ -154,6 +166,45 @@ export function toCore(iv: Intervention): HardIntervention {
   };
 }
 
+/** Evidence resolved against the compiled plan (D26). */
+interface ResolvedEvidence {
+  /** As requested, in request order. */
+  readonly observations: EvidenceObservation[];
+  /** Core evidence pairs, in request order. */
+  readonly pairs: EvidencePair[];
+  /** Order-independent hash; scenario.json and the run manifest record it. */
+  readonly hash: string;
+}
+
+/** Content hash of an evidence set, independent of list order (the empty set has one too). */
+export function evidenceHash(pairs: readonly EvidencePair[]): string {
+  const sorted = [...pairs].sort((a, b) => compareKeys(a[0], b[0]));
+  return contentHash({ schema: "evidence.v1", evidence: sorted.map(([key, value]) => [[...key], value]) });
+}
+
+/**
+ * Each observation names a key of the compiled plan in the model's scenario,
+ * with a value of that key's domain (the variable's domain for the entity's
+ * kind). Shape, duplicates, and evidence on the target were checked with the
+ * request.
+ */
+function resolveEvidence(c: CompiledPlan, keys: Map<string, KeyInfo>, req: ForecastRequest): ResolvedEvidence {
+  const observations = (req.evidence ?? []).map((e) => ({ ...e }));
+  const pairs = observations.map((e, i): EvidencePair => {
+    const k = variableKeyString([c.payload.scenario_id, e.variable, e.entity_id, e.time_index]);
+    const info = keys.get(k);
+    if (info === undefined) throw unprocessable("unknown_evidence_key", `evidence[${i}]: the compiled plan has no key ${k}`);
+    if (!info.space.values.includes(e.value)) {
+      throw unprocessable(
+        "out_of_domain_evidence",
+        `evidence[${i}]: ${JSON.stringify(e.value)} is outside ${info.space.name} (${info.space.values.join(", ")}) for ${k}`,
+      );
+    }
+    return [info.key, e.value];
+  });
+  return { observations, pairs, hash: evidenceHash(pairs) };
+}
+
 /** Surgery errors: out-of-domain values get their own code (guide §11.1). */
 function surgery(plan: Plan, interventions: readonly HardIntervention[]): Plan {
   try {
@@ -173,21 +224,54 @@ interface Queried {
   readonly intervention: Omit<ScenarioResult, "scenario_id"> | null;
 }
 
-/** Exact per-step queries: baseline always, the intervened model when interventions are given. */
-function runQueries(c: CompiledPlan, ctx: AppContext, keys: readonly VariableKey[], core: readonly HardIntervention[], intervened: Plan | null): Queried {
+/** Core's message for zero-probability evidence (enumeration and frontier alike). */
+const ZERO_EVIDENCE = /^the evidence has zero probability under this model/;
+
+/** A core query; zero-probability evidence is 422 `impossible_evidence` (never repaired), any other failure `invalid_query`. */
+function query(scenario: "baseline" | "intervened", fn: () => QueryResult): QueryResult {
+  try {
+    return fn();
+  } catch (err) {
+    if (!(err instanceof ValueError)) throw err;
+    if (ZERO_EVIDENCE.test(err.message)) {
+      throw unprocessable(
+        "impossible_evidence",
+        `the evidence has zero probability in the ${scenario} model, so nothing can be conditioned on it; it is never repaired or dropped`,
+      );
+    }
+    throw unprocessable("invalid_query", err.message);
+  }
+}
+
+/**
+ * Exact per-step queries: the baseline always (conditional under evidence),
+ * the intervened model when interventions are given, conditioned on the same
+ * evidence.
+ */
+function runQueries(
+  c: CompiledPlan,
+  ctx: AppContext,
+  keys: readonly VariableKey[],
+  core: readonly HardIntervention[],
+  intervened: Plan | null,
+  evidence: readonly EvidencePair[],
+): Queried {
   const initial = initialPriors(c);
   const budget = budgetFrom(ctx.config.bounds);
-  const steps = as422("invalid_query", () =>
-    keys.map((target) => ({
-      base: runQuery(c.plan, { query_kind: "observational", target, initial, budget }),
-      done: intervened === null ? null : runQuery(c.plan, { query_kind: "interventional", target, initial, budget, interventions: core }),
-    })),
-  );
+  const baseKind: QueryKind = evidence.length > 0 ? "conditional" : "observational";
+  const conditioning = evidence.length > 0 ? { evidence } : {};
+  const steps = keys.map((target) => ({
+    base: query("baseline", () => runQuery(c.plan, { query_kind: baseKind, target, initial, budget, ...conditioning })),
+    done:
+      intervened === null
+        ? null
+        : query("intervened", () => runQuery(c.plan, { query_kind: "interventional", target, initial, budget, interventions: core, ...conditioning })),
+  }));
   const first = steps[0]!;
   return {
     baseline: {
       is_baseline: true,
-      query_kind: "observational",
+      query_kind: baseKind,
       effect_status: first.base.effect_status,
       model_hash: c.plan.model_hash,
       by_horizon: steps.map((s, i) => horizonEntry(i + 1, s.base)),
@@ -239,7 +323,7 @@ function dataOrigin(c: CompiledPlan): Origin {
 
 /** Run scenario label: the request's, else the model's scenario (or `intervention` for an intervened run). */
 function runScenario(req: ForecastRequest, base: string): string {
-  if (req.query_kind === "observational") return req.scenario_id ?? base;
+  if (req.query_kind !== "interventional") return req.scenario_id ?? base;
   const name = req.scenario_id ?? (base === "intervention" ? "intervened" : "intervention");
   if (name === base) {
     throw unprocessable(
@@ -261,6 +345,7 @@ interface RunContext {
   readonly scenario: string;
   readonly interventions: Intervention[];
   readonly core: HardIntervention[];
+  readonly evidence: ResolvedEvidence;
   readonly intervenedHash: string | null;
   /** Hash of the initial law; `model_hash` does not cover priors (D23). */
   readonly initialLawHash: string;
@@ -276,14 +361,22 @@ interface RunContext {
 
 function buildReport(r: RunContext): ReportInput {
   const { req, c } = r;
+  const observations = r.evidence.observations;
+  const conditioned = observations.length > 0;
   const notes = [
     "Every kernel is listed with its parameter origin; hand-specified kernels are assumptions, not estimates from data.",
     req.initial_belief_ref === undefined
       ? "The initial belief is the model's declared prior over each source key (origin assumed)."
       : "The initial belief is the model's declared prior over each source key (origin assumed); the requested " +
         `initial_belief_ref ${JSON.stringify(req.initial_belief_ref)} is recorded but not resolved, since no belief store exists yet.`,
-    "No evidence conditions this forecast.",
+    conditioned
+      ? `Every scenario is conditioned on the evidence (${describeEvidence(observations)}) by Bayes' rule in the stated model. ` +
+        "Conditioning updates beliefs and never edits a mechanism; the conditional distributions are not observed frequencies."
+      : "No evidence conditions this forecast.",
   ];
+  if (conditioned && r.intervention !== null) {
+    notes.push("The intervened model is conditioned on the same evidence as the conditional baseline.");
+  }
   if (r.intervention !== null) {
     notes.push(
       "Each hard intervention replaces the targeted variable's mechanism with a constant over its half-open window " +
@@ -321,6 +414,7 @@ function buildReport(r: RunContext): ReportInput {
     base_scenario_id: r.baseline.scenario_id,
     query_kind: req.query_kind,
     effect_status: (r.intervention ?? r.baseline).effect_status,
+    conditioning: r.scope.conditioning,
     step_minutes: req.step_minutes ?? null,
     plan_version: c.planVersion,
     graph_hash: c.payload.graph_hash,
@@ -332,6 +426,7 @@ function buildReport(r: RunContext): ReportInput {
       kernels: r.kernels,
       priors: c.model.model.initial.map((p) => ({ key: keyJson(p.key), distribution: [...p.distribution], origin: "assumed" })),
       interventions: r.interventions,
+      evidence: observations,
       notes,
     },
     source_backed: { evidence_count: c.world.evidence.length, claim_count: c.world.claims.length },
@@ -340,8 +435,9 @@ function buildReport(r: RunContext): ReportInput {
       baseline: r.baseline,
       intervention: r.intervention,
       interventions: r.interventions,
+      evidence: observations,
     }),
-    statement_policy: statementPolicy(r.validationStatus),
+    statement_policy: statementPolicy(r.validationStatus, conditioned),
   };
 }
 
@@ -359,6 +455,8 @@ function writeRun(ctx: AppContext, r: RunContext, repoSha: string): string {
     prediction_scope: r.scope,
     initial: c.model.model.initial.map((p) => ({ key: keyJson(p.key), distribution: [...p.distribution] })),
     initial_law_hash: r.initialLawHash,
+    evidence: r.evidence.pairs.map(([key, value]) => ({ key: keyJson(key), value })),
+    evidence_hash: r.evidence.hash,
     world_version: c.worldVersion,
     model_version: c.modelVersion,
     plan_version: c.planVersion,
@@ -405,6 +503,7 @@ function writeRun(ctx: AppContext, r: RunContext, repoSha: string): string {
     plan_version: c.planVersion,
     graph_hash: c.payload.graph_hash,
     intervened_model_hash: r.intervenedHash,
+    evidence_hash: r.evidence.hash,
     report_id: r.reportId,
     files: {
       "scenario.json": contentHash(scenarioJson),
@@ -428,8 +527,9 @@ export function executeForecast(ctx: AppContext, project: ProjectState, req: For
   const scenario = runScenario(req, base);
   const interventions = resolveInterventions(req, keys);
   const core = interventions.map(toCore);
+  const evidence = resolveEvidence(c, keys, req);
   const intervened = core.length > 0 ? surgery(c.plan, core) : null;
-  const queried = runQueries(c, ctx, target.keys, core, intervened);
+  const queried = runQueries(c, ctx, target.keys, core, intervened, evidence.pairs);
   const lawHash = as422("invalid_query", () => initialLawHash(initialPriors(c)));
 
   const kernels = kernelProvenance(c);
@@ -449,6 +549,7 @@ export function executeForecast(ctx: AppContext, project: ProjectState, req: For
     scenario,
     interventions,
     core,
+    evidence,
     intervenedHash: intervened?.model_hash ?? null,
     initialLawHash: lawHash,
     baseline: { scenario_id: base, ...queried.baseline },
@@ -479,10 +580,14 @@ export function executeForecast(ctx: AppContext, project: ProjectState, req: For
         source: "model_initial",
         keys: c.model.model.initial.map((p) => keyJson(p.key)),
       },
-      conditioning: "none",
+      conditioning: evidence.pairs.length > 0 ? "evidence" : "none",
+      evidence: evidence.observations,
       interpretation:
-        "Distribution of the target in this model, given the stated kernels, initial belief, and interventions; " +
-        "not an empirical frequency.",
+        evidence.pairs.length > 0
+          ? "Distribution of the target in this model, conditional on the listed evidence, given the stated kernels, " +
+            "initial belief, and interventions; not an empirical frequency."
+          : "Distribution of the target in this model, given the stated kernels, initial belief, and interventions; " +
+            "not an empirical frequency.",
     },
   };
 

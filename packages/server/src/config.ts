@@ -23,6 +23,8 @@ export interface Bounds {
   readonly maxHorizonSteps: number;
   readonly maxParticles: number;
   readonly maxInterventions: number;
+  /** Evidence observations per forecast request (D26). */
+  readonly maxEvidence: number;
   /** Body limit for JSON routes (world and model import). */
   readonly maxJsonBodyBytes: number;
   /** Compile budget (core `Budget`); `maxParticles` is shared. */
@@ -64,6 +66,7 @@ export const DEFAULT_BOUNDS: Bounds = Object.freeze({
   maxHorizonSteps: 1000,
   maxParticles: 100_000,
   maxInterventions: 64,
+  maxEvidence: 256,
   maxJsonBodyBytes: 16 * MiB,
   maxContexts: 65_536,
   maxFactorEntries: 1_048_576,
@@ -97,6 +100,7 @@ const BOUNDS_ENV = {
   C2P_MAX_HORIZON_STEPS: "maxHorizonSteps",
   C2P_MAX_PARTICLES: "maxParticles",
   C2P_MAX_INTERVENTIONS: "maxInterventions",
+  C2P_MAX_EVIDENCE: "maxEvidence",
   C2P_MAX_JSON_BODY_BYTES: "maxJsonBodyBytes",
   C2P_MAX_CONTEXTS: "maxContexts",
   C2P_MAX_FACTOR_ENTRIES: "maxFactorEntries",

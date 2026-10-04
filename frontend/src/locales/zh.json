@@ -399,15 +399,19 @@
     "none": "无",
     "series": {
       "baseline": "基线（{scenario}）",
-      "intervention": "干预（{scenario}）"
+      "intervention": "干预（{scenario}）",
+      "conditionalBaseline": "条件基线（{scenario}）",
+      "conditionalIntervention": "干预，条件（{scenario}）"
     },
     "effect": {
       "model_based_intervention": "基于模型的干预",
       "not_applicable": "观测性预测（无干预）",
+      "conditional": "条件预测（无干预）",
       "note": "通过对所述模型做手术计算：被干预的输入固定在指定取值，其余机制保持不变。这是基于模型的结果，而不是由数据识别出的效应。"
     },
     "queryKind": {
       "observational": "观测性",
+      "conditional": "条件",
       "interventional": "干预性"
     },
     "runStatus": {
@@ -459,7 +463,18 @@
       "end": "结束步（不含）",
       "transitions": "作用于 {list}",
       "noInterventions": "没有干预：该请求是观测性预测。",
+      "noInterventionsConditional": "没有干预：该请求是条件预测。",
       "add": "添加硬干预",
+      "evidence": {
+        "heading": "证据（条件化）",
+        "rule": "证据更新信念，绝不改变机制。",
+        "detail": "每条观测把一个实体的一个变量在一个时间索引上固定为其取值域中的一个值。所有情景（包括干预情景）都以全部观测为条件。预测步上的目标不能作为证据；模型赋予零概率的证据会被拒绝，绝不修补。",
+        "row": "观测 {n}",
+        "time": "时间索引",
+        "value": "观测值",
+        "add": "添加证据",
+        "none": "没有证据：预测未被条件化。"
+      },
       "submit": "运行预测",
       "running": "运行中…",
       "errors": {
@@ -476,6 +491,10 @@
         "windowInteger": "起始和结束必须是整数，且起始不小于 0。",
         "windowInverted": "结束（{end}）必须大于起始（{start}）：窗口 [start, end) 是左闭右开区间。",
         "windowHorizon": "结束（{end}）不能超过预测步数（{horizon}）。",
+        "evidenceTime": "时间索引必须是不小于 0 的整数。",
+        "evidenceTimeMax": "时间索引不能超过模型的预测范围 {max}。",
+        "evidenceTarget": "这是第 {time} 步的预测目标（第 1 到 {horizon} 步会被预测）；请观测其他变量或时间索引。",
+        "evidenceDuplicate": "已有另一条观测固定了该变量、实体和时间索引。",
         "blocked": "请修正标出的字段；没有发送任何请求。"
       }
     },
@@ -500,6 +519,8 @@
     "result": {
       "openReport": "打开报告",
       "held": "固定",
+      "observed": "观测",
+      "conditionalNote": "所有情景都以这些证据为条件。证据更新信念，绝不改变机制。",
       "references": "精确引用",
       "scopeScenario": "查询的情景",
       "cutoff": "信息截止时间",
@@ -686,6 +707,8 @@
       "origin": "来源",
       "interventions": "干预",
       "noInterventions": "无：观测性预测。",
+      "evidence": "证据（条件化）",
+      "noEvidence": "无：没有证据对本预测进行条件化。",
       "notes": "说明",
       "none": "此报告未列出假设。"
     },

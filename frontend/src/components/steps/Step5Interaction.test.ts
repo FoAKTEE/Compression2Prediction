@@ -160,6 +160,43 @@ describe("Step5Interaction", () => {
     expect(wrapper.find("[data-testid='rank-scope-hash']").exists()).toBe(false);
   });
 
+  it("shows the server's note that pruning certificates do not apply to a conditioned run", async () => {
+    const note =
+      "Scores order computation and review only; they are not causal effects and never change kernel probabilities. " +
+      "Pruning certificates do not apply to conditioned queries: the influence bounds are unconditioned, and rare evidence can " +
+      "amplify any change, so this run's entries are never certified prunable.";
+    vi.mocked(getRankDiagnostics).mockResolvedValue({
+      run_id: EXAMPLE_INTERVENTION_RUN_ID,
+      method: "reverse_ppr+tv_path_bound",
+      entries: [{ node_id: "n", node_kind: "variable", score: 1, influence_bound: 0, certified_prunable: false }],
+      kernel_hashes_unchanged: true,
+      certificate_scope: null,
+      note,
+    });
+    const wrapper = await mountStep();
+    expect(wrapper.get("[data-testid='rank-scope']").text()).toBe("none (nothing is certified)");
+    expect(wrapper.get("[data-testid='rank-note']").text()).toBe(note);
+    expect(wrapper.get("[data-testid='rank-prunable']").text()).toBe("No");
+  });
+
+  it("keeps a conditioned run's evidence in the what-if request", async () => {
+    const evidence = [{ variable: "crew_capacity", entity_id: "ent_repair_crew", time_index: 1, value: "high" }];
+    const run = exampleRunResult(EXAMPLE_INTERVENTION_RUN_ID)!;
+    const conditioned: ForecastResult = { ...run, prediction_scope: { ...run.prediction_scope, conditioning: "evidence", evidence } };
+    vi.mocked(getRun).mockImplementation(async (_p, runId) => (runId === EXAMPLE_INTERVENTION_RUN_ID ? conditioned : exampleRunResult(runId)!));
+    vi.mocked(runForecast).mockResolvedValue({ ...conditioned, run_id: "run_whatif", created_at: "2026-10-04T10:00:00.000Z" });
+    const wrapper = await mountStep();
+    const whatif = wrapper.get("[data-testid='whatif-panel']");
+    const row = whatif.get("[data-testid='evidence-row']");
+    expect((row.get("[data-testid='ev-variable']").element as HTMLSelectElement).value).toBe("crew_capacity");
+    expect((row.get("[data-testid='ev-time']").element as HTMLInputElement).value).toBe("1");
+    expect(whatif.get("[data-testid='query-kind']").text()).toBe("interventional · conditional");
+    await whatif.get("[data-testid='forecast-form']").trigger("submit");
+    await flushPromises();
+    expect(vi.mocked(runForecast).mock.calls[0]![1]).toMatchObject({ query_kind: "interventional", evidence });
+    expect(whatif.get("[data-testid='conditional-badge']").text()).toBe("conditional");
+  });
+
   it("re-runs the selected run's request with an edited intervention", async () => {
     const edited: ForecastResult = {
       ...exampleRunResult(EXAMPLE_INTERVENTION_RUN_ID)!,

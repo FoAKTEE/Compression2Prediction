@@ -1024,3 +1024,74 @@ say so explicitly and never rewrite history.
 - next: produce all horizon marginals in one forward pass (the forecast
   service queries each step separately, O(h²) writer steps); add
   elimination-order heuristics; record the method in run manifests.
+
+## D26 — Conditioning in the forecast API
+
+- date: 2026-10-04
+- decision:
+  - Wire. `ForecastRequest` takes optional `evidence: [{variable,
+    entity_id, time_index, value}]`, at most `maxEvidence` items (config
+    `C2P_MAX_EVIDENCE`, default 256). `QueryKind` gains `conditional`:
+    `observational` has no evidence and no interventions, `conditional` has
+    evidence and no interventions, and `interventional` has at least one
+    intervention, with or without evidence. Any other combination is 422
+    `invalid_request`. A key is `(model scenario, variable, entity_id,
+    time_index)`.
+  - Validation, all 422. Before the plan loads: shape, strict fields,
+    `time_index` >= 0, and no duplicate keys (`invalid_request`). Evidence
+    on the target at a forecast step (1..h) is `evidence_on_target`. Against
+    the compiled plan: a key the plan lacks is `unknown_evidence_key`, and a
+    value outside that key's Space is `out_of_domain_evidence`. At query
+    time, core's zero-evidence error is `impossible_evidence`, naming the
+    baseline or intervened model. It is never repaired or dropped, and no
+    run is written. Evidence may sit on any other key at any tick, also
+    after a forecast step. The step-k result is then P(target_k | all
+    evidence), a smoothing quantity, and it is labeled conditional.
+  - Execution. Every step queries core `runQuery` with the same evidence
+    pairs. The baseline is `conditional` under evidence (`ScenarioResult`
+    `query_kind`), and the intervention is `interventional` on the intervened
+    plan with the same evidence. Plans and model hashes do not change:
+    conditioning never edits a mechanism.
+  - Scope and artifacts. `prediction_scope.conditioning` is `none` or
+    `evidence`. `prediction_scope.evidence` lists the observations in
+    request order (empty for none), and the interpretation says "conditional
+    on the listed evidence". scenario.json records the request, the evidence
+    with keys, and `evidence_hash` (content hash of `evidence.v1` with pairs
+    sorted by key, so list order does not matter). The manifest records the
+    same `evidence_hash`. Unconditioned runs carry the empty set's hash.
+  - Reports. Every statement under evidence reads "In this model,
+    conditional on <variable = value for entity at time index t and ...>,
+    ...", including the intervention and comparison statements. The policy
+    and notes say that conditioning changes no mechanism. The report has
+    `conditioning`, and `assumptions.evidence` lists the observations.
+    Stored pre-D26 reports serialize with `evidence: []`.
+  - Rank. A run whose scope is not explicitly `conditioning: "none"` keeps
+    its PPR scores and path bounds, but gets `certificate_scope: null`, no
+    entry certified prunable, and a note that pruning certificates do not
+    apply to conditioned queries (the core refusal, D23).
+  - UI. Step 3 has an "Evidence (conditioning)" builder next to the
+    hard-intervention builder. Its fields are variable, entity, time index
+    (bounded by the model horizon), and a value from the domain. It shows
+    "Evidence updates beliefs; it never changes mechanisms". The builder
+    blocks duplicates and the target at forecast steps locally. Results,
+    reports, and the run list show "conditional" badges and conditional
+    series labels. The what-if form keeps a run's evidence. The report lists
+    the evidence. The rank panel shows the server note.
+- why: guide §8.1 and invariant 9: evidence updates beliefs, and the core
+  already conditions exactly (D25 frontier included). Invariant 10: zero
+  evidence probability must surface, never be clipped. Certificates bound
+  unconditioned queries only (D23).
+- alternatives:
+  - Accept `observational` with evidence and relabel it. Rejected: core
+    rejects it, and a silent relabel hides a request error.
+  - Forbid evidence after the earliest forecast step (a strict filtering
+    cutoff). Rejected for now: the spec forbids only the target at forecast
+    steps, and the label keeps the meaning visible. A cutoff policy would
+    need its own field.
+  - Condition only the intervention, or only the baseline. Rejected: the
+    comparison would mix two information states.
+  - Add `conditioning` to the run summaries. Deferred: it changes the
+    listing contract. The full run and the report carry it.
+- next: an evidence store with origins and availability times, so evidence
+  enters `information_cutoff`; filtering forecasts that respect a cutoff;
+  sampled inference under evidence with per-lineage weights.

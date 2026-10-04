@@ -327,3 +327,33 @@ describe("Step4Report", () => {
     expect(listSyntheticBacktests).not.toHaveBeenCalled();
   });
 });
+
+describe("Step4Report: a conditioned run", () => {
+  it("lists the evidence among the assumptions and labels the report conditional", async () => {
+    const base = report();
+    const evidence = [{ variable: "crew_capacity", entity_id: "ent_repair_crew", time_index: 1, value: "high" }];
+    vi.mocked(getProjectReport).mockResolvedValue({ ...base, conditioning: "evidence", assumptions: { ...base.assumptions!, evidence } });
+    const wrapper = await mountStep();
+    const body = wrapper.get("[data-testid='report-body']");
+    expect(body.get("[data-testid='report-conditional-badge']").text()).toBe("conditional");
+    expect(body.get("[data-testid='effect-badge']").text()).toBe("model-based intervention");
+    const assumptions = body.get("[data-testid='report-assumptions']");
+    expect(assumptions.text()).toContain("Evidence (conditioning)");
+    expect(assumptions.findAll("[data-testid='assumption-evidence-item']").map((li) => li.text())).toEqual([
+      "crew_capacity = high · ent_repair_crew · t=1",
+    ]);
+    expect(assumptions.text()).toContain("Evidence updates beliefs; it never changes mechanisms.");
+    expect(assumptions.find("[data-testid='assumption-no-evidence']").exists()).toBe(false);
+    const legend = body.get("[data-testid='chart-legend']").text();
+    expect(legend).toContain("Conditional baseline (baseline)");
+    expect(legend).toContain("Intervention, conditional (extra_crew)");
+  });
+
+  it("says no evidence conditions an unconditioned report, also one from an older server without the field", async () => {
+    const wrapper = await mountStep();
+    const assumptions = wrapper.get("[data-testid='report-assumptions']");
+    expect(assumptions.get("[data-testid='assumption-no-evidence']").text()).toBe("None: no evidence conditions this forecast.");
+    expect(wrapper.find("[data-testid='report-conditional-badge']").exists()).toBe(false);
+    expect(wrapper.get("[data-testid='chart-legend']").text()).toContain("Baseline (baseline)");
+  });
+});

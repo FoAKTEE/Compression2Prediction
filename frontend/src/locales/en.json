@@ -399,15 +399,19 @@
     "none": "none",
     "series": {
       "baseline": "Baseline ({scenario})",
-      "intervention": "Intervention ({scenario})"
+      "intervention": "Intervention ({scenario})",
+      "conditionalBaseline": "Conditional baseline ({scenario})",
+      "conditionalIntervention": "Intervention, conditional ({scenario})"
     },
     "effect": {
       "model_based_intervention": "model-based intervention",
       "not_applicable": "observational (no intervention)",
+      "conditional": "conditional (no intervention)",
       "note": "Computed by surgery on the stated model: the intervened inputs are held at their values and every other mechanism is unchanged. It is a model-based result, not an effect identified from data."
     },
     "queryKind": {
       "observational": "observational",
+      "conditional": "conditional",
       "interventional": "interventional"
     },
     "runStatus": {
@@ -459,7 +463,18 @@
       "end": "End step (exclusive)",
       "transitions": "holds for {list}",
       "noInterventions": "No interventions: the request is an observational forecast.",
+      "noInterventionsConditional": "No interventions: the request is a conditional forecast.",
       "add": "Add hard intervention",
+      "evidence": {
+        "heading": "Evidence (conditioning)",
+        "rule": "Evidence updates beliefs; it never changes mechanisms.",
+        "detail": "Each observation fixes one variable of one entity at one time index to a value from its domain. Every scenario, the intervened one included, is conditioned on all of them. The target at a forecast step cannot be evidence, and evidence the model gives zero probability is rejected, never repaired.",
+        "row": "Observation {n}",
+        "time": "Time index",
+        "value": "Observed value",
+        "add": "Add evidence",
+        "none": "No evidence: the forecast is not conditioned."
+      },
       "submit": "Run forecast",
       "running": "Running…",
       "errors": {
@@ -476,6 +491,10 @@
         "windowInteger": "Start and end must be whole numbers, with start at least 0.",
         "windowInverted": "End ({end}) must be greater than start ({start}): the window [start, end) is half-open.",
         "windowHorizon": "End ({end}) must not exceed the horizon ({horizon}).",
+        "evidenceTime": "The time index must be a whole number of at least 0.",
+        "evidenceTimeMax": "The time index must be at most {max}, the model's horizon.",
+        "evidenceTarget": "This is the forecast target at step {time} (steps 1 to {horizon} are forecast); observe another variable or time index.",
+        "evidenceDuplicate": "Another observation already fixes this variable, entity, and time index.",
         "blocked": "Fix the marked fields; nothing was sent."
       }
     },
@@ -500,6 +519,8 @@
     "result": {
       "openReport": "Open report",
       "held": "held",
+      "observed": "observed",
+      "conditionalNote": "Every scenario is conditioned on this evidence. Evidence updates beliefs; it never changes mechanisms.",
       "references": "Exact references",
       "scopeScenario": "Queried scenario",
       "cutoff": "Information cutoff",
@@ -686,6 +707,8 @@
       "origin": "Origin",
       "interventions": "Interventions",
       "noInterventions": "None: an observational forecast.",
+      "evidence": "Evidence (conditioning)",
+      "noEvidence": "None: no evidence conditions this forecast.",
       "notes": "Notes",
       "none": "This report lists no assumptions."
     },

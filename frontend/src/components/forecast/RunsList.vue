@@ -48,7 +48,10 @@ const ordered = computed(() =>
           </span>
         </span>
         <span class="runs__meta">
-          <EffectBadge :status="run.effect_status ?? (run.query_kind === 'interventional' ? 'model_based_intervention' : 'not_applicable')" />
+          <EffectBadge
+            :status="run.effect_status ?? (run.query_kind === 'interventional' ? 'model_based_intervention' : 'not_applicable')"
+            :conditioned="run.query_kind === 'conditional'"
+          />
           <span v-if="run.status !== 'completed'" class="badge">{{ t(`forecast.runStatus.${run.status}`) }}</span>
           <span class="mono runs__date">{{ formatTimestamp(run.created_at, locale) }}</span>
           <span class="mono runs__id" :title="run.run_id">{{ run.run_id }}</span>

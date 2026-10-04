@@ -1,16 +1,20 @@
 <script setup lang="ts">
 import { computed, ref, useId, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import type { ForecastRequest, Intervention, PrimaryKind, VariableDef } from "../../api/types";
+import type { EvidenceObservation, ForecastRequest, Intervention, PrimaryKind, QueryKind, VariableDef } from "../../api/types";
 import type { EntityOption } from "./examples";
 
 /**
  * A forecast request: a target (an entity whose kind has a registered
- * variable, and one of those variables), a horizon, a scenario label, and
- * hard interventions. Each intervention holds an input variable at a value
- * from its kind's domain over a half-open window [start, end). Everything the
- * server would reject for shape is checked here first, so a bad request is
- * never sent; the server still validates it.
+ * variable, and one of those variables), a horizon, a scenario label, hard
+ * interventions, and evidence. Each intervention holds an input variable at a
+ * value from its kind's domain over a half-open window [start, end). Each
+ * evidence observation fixes one variable of one entity at one time index to
+ * a value from its kind's domain; it conditions every scenario and changes no
+ * mechanism. Everything the server would reject for shape is checked here
+ * first, so a bad request is never sent; the server still validates it (for
+ * example, whether a key exists at that tick, or whether the evidence is
+ * possible in the model).
  */
 const props = withDefaults(
   defineProps<{
@@ -34,14 +38,24 @@ const uid = useId();
 /** The server's scenario-name rule: one safe path component. */
 const SCENARIO_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const MAX_INTERVENTIONS = 16;
+const MAX_EVIDENCE = 32;
 
-interface Draft {
-  key: number;
+/** A variable of one entity with a value from its domain: what both builders choose. */
+interface Selection {
   variable: string;
   entityId: string;
   value: string;
+}
+
+interface Draft extends Selection {
+  key: number;
   start: number | string;
   end: number | string;
+}
+
+interface EvidenceDraft extends Selection {
+  key: number;
+  time: number | string;
 }
 
 let nextKey = 1;
@@ -51,6 +65,7 @@ const targetVariable = ref("");
 const horizon = ref<number | string>(1);
 const scenarioId = ref("");
 const drafts = ref<Draft[]>([]);
+const evidenceDrafts = ref<EvidenceDraft[]>([]);
 const attempted = ref(false);
 /** The user typed a horizon; the model's horizon no longer replaces it when it arrives. */
 const horizonEdited = ref(false);
@@ -121,6 +136,18 @@ function draftFrom(iv: Intervention): Draft {
   };
 }
 
+/** A new observation: a variable other than the target where one exists, at time index 0, with its first domain value. */
+function defaultEvidence(): EvidenceDraft {
+  const candidates = props.variables.filter((v) => entitiesFor(v.variable_id).length > 0);
+  const variable = (candidates.find((v) => v.variable_id !== targetVariable.value) ?? candidates[0] ?? props.variables[0])?.variable_id ?? "";
+  const entityId = entitiesFor(variable)[0]?.entity_id ?? "";
+  return { key: nextKey++, variable, entityId, value: domainFor(variable, entityId)?.[0] ?? "", time: 0 };
+}
+
+function evidenceFrom(e: EvidenceObservation): EvidenceDraft {
+  return { key: nextKey++, variable: e.variable, entityId: e.entity_id, value: e.value, time: e.time_index };
+}
+
 /** Picks a valid target when the current one is not among the options (once the options are known). */
 function ensureTarget(): void {
   if (targetEntities.value.length && !targetEntities.value.some((e) => e.entity_id === targetEntityId.value)) {
@@ -141,6 +168,7 @@ function reset(): void {
     horizon.value = init.horizon_steps;
     scenarioId.value = init.scenario_id ?? "";
     drafts.value = init.interventions.filter((iv) => iv.kind === "hard").map(draftFrom);
+    evidenceDrafts.value = (init.evidence ?? []).map(evidenceFrom);
     droppedKinds.value = init.interventions.filter((iv) => iv.kind !== "hard").map((iv) => iv.kind);
     passThrough.value = {
       ...(init.initial_belief_ref !== undefined ? { initial_belief_ref: init.initial_belief_ref } : {}),
@@ -153,6 +181,7 @@ function reset(): void {
     horizon.value = props.horizonMax ?? 1;
     scenarioId.value = "";
     drafts.value = [];
+    evidenceDrafts.value = [];
     droppedKinds.value = [];
     passThrough.value = {};
   }
@@ -187,15 +216,24 @@ function removeIntervention(key: number): void {
   drafts.value = drafts.value.filter((d) => d.key !== key);
 }
 
+function addEvidence(): void {
+  if (evidenceDrafts.value.length >= MAX_EVIDENCE) return;
+  evidenceDrafts.value = [...evidenceDrafts.value, defaultEvidence()];
+}
+
+function removeEvidence(key: number): void {
+  evidenceDrafts.value = evidenceDrafts.value.filter((d) => d.key !== key);
+}
+
 /** A new variable or entity: keep the value only if it is in the new domain, else take the domain's first value. */
-function onVariableChange(draft: Draft): void {
+function onVariableChange(draft: Selection): void {
   if (!entitiesFor(draft.variable).some((e) => e.entity_id === draft.entityId)) {
     draft.entityId = entitiesFor(draft.variable)[0]?.entity_id ?? "";
   }
   onEntityChange(draft);
 }
 
-function onEntityChange(draft: Draft): void {
+function onEntityChange(draft: Selection): void {
   const domain = domainFor(draft.variable, draft.entityId) ?? [];
   if (!domain.includes(draft.value)) draft.value = domain[0] ?? "";
 }
@@ -246,12 +284,62 @@ function draftErrors(d: Draft): DraftErrors {
 
 const errorsByDraft = computed(() => new Map(drafts.value.map((d) => [d.key, draftErrors(d)])));
 
+interface EvidenceErrors {
+  variable: string | null;
+  entity: string | null;
+  value: string | null;
+  time: string | null;
+  key: string | null;
+}
+
+/** Same key as an earlier observation: the server rejects duplicates. */
+const duplicateEvidence = computed(() => {
+  const seen = new Set<string>();
+  const dup = new Set<number>();
+  for (const d of evidenceDrafts.value) {
+    const id = JSON.stringify([d.variable, d.entityId, d.time]);
+    if (seen.has(id)) dup.add(d.key);
+    seen.add(id);
+  }
+  return dup;
+});
+
+function evidenceErrors(d: EvidenceDraft): EvidenceErrors {
+  const out: EvidenceErrors = { variable: null, entity: null, value: null, time: null, key: null };
+  if (variableDef(d.variable) === null) out.variable = t("forecast.form.errors.variable");
+  const domain = domainFor(d.variable, d.entityId);
+  if (!d.entityId || domain === null) out.entity = t("forecast.form.errors.entity");
+  else if (d.value === "") out.value = t("forecast.form.errors.value");
+  else if (!domain.includes(d.value)) out.value = t("forecast.form.errors.outOfDomain", { value: d.value });
+  const h = horizonNumber.value;
+  if (!isInt(d.time) || d.time < 0) out.time = t("forecast.form.errors.evidenceTime");
+  else if (props.horizonMax !== null && d.time > props.horizonMax) out.time = t("forecast.form.errors.evidenceTimeMax", { max: props.horizonMax });
+  else if (d.variable === targetVariable.value && d.entityId === targetEntityId.value && d.time >= 1 && Number.isInteger(h) && d.time <= h) {
+    out.key = t("forecast.form.errors.evidenceTarget", { time: d.time, horizon: h });
+  } else if (duplicateEvidence.value.has(d.key)) out.key = t("forecast.form.errors.evidenceDuplicate");
+  return out;
+}
+
+const errorsByEvidence = computed(() => new Map(evidenceDrafts.value.map((d) => [d.key, evidenceErrors(d)])));
+
 const hasErrors = computed(
   () =>
     horizonError.value !== null ||
     targetError.value !== null ||
     scenarioError.value !== null ||
-    [...errorsByDraft.value.values()].some((e) => e.variable || e.entity || e.value || e.window),
+    [...errorsByDraft.value.values()].some((e) => e.variable || e.entity || e.value || e.window) ||
+    [...errorsByEvidence.value.values()].some((e) => e.variable || e.entity || e.value || e.time || e.key),
+);
+
+/** Interventions make it interventional (conditioned too, under evidence); evidence alone makes it conditional. */
+const queryKind = computed<QueryKind>(() =>
+  drafts.value.length ? "interventional" : evidenceDrafts.value.length ? "conditional" : "observational",
+);
+
+const queryKindLabel = computed(() =>
+  queryKind.value === "interventional" && evidenceDrafts.value.length
+    ? `${t("forecast.queryKind.interventional")} · ${t("forecast.queryKind.conditional")}`
+    : t(`forecast.queryKind.${queryKind.value}`),
 );
 
 const canSubmit = computed(() => !props.disabled && !props.busy && !hasErrors.value);
@@ -269,7 +357,7 @@ function buildRequest(): ForecastRequest {
   const scenario = scenarioId.value.trim();
   return {
     ...(scenario ? { scenario_id: scenario } : {}),
-    query_kind: drafts.value.length ? "interventional" : "observational",
+    query_kind: queryKind.value,
     target_entity_id: targetEntityId.value,
     target_variable: targetVariable.value,
     horizon_steps: horizon.value as number,
@@ -282,6 +370,16 @@ function buildRequest(): ForecastRequest {
       start_step: d.start as number,
       end_step_exclusive: d.end as number,
     })),
+    ...(evidenceDrafts.value.length
+      ? {
+          evidence: evidenceDrafts.value.map((d) => ({
+            variable: d.variable,
+            entity_id: d.entityId,
+            time_index: d.time as number,
+            value: d.value,
+          })),
+        }
+      : {}),
   };
 }
 
@@ -370,163 +468,289 @@ const fid = (name: string) => `${uid}-${name}`;
     <p v-if="horizonError" class="field__error" data-testid="horizon-error">{{ horizonError }}</p>
     <p v-if="scenarioError" :id="fid('scenario-error')" class="field__error" data-testid="scenario-error">{{ scenarioError }}</p>
 
-    <fieldset class="fc-form__interventions" data-testid="intervention-builder">
-      <legend class="eyebrow">{{ t("forecast.form.interventions") }}</legend>
-      <div class="fc-form__rules" data-testid="intervention-rules">
-        <p>{{ t("forecast.form.rules.input") }}</p>
-        <p>{{ t("forecast.form.rules.window") }}</p>
-        <p class="fc-form__unavailable" data-testid="mechanism-unavailable">{{ t("forecast.form.rules.unavailable") }}</p>
-      </div>
-      <p v-if="droppedKinds.length" class="field__error" data-testid="dropped-interventions">
-        {{ t("forecast.form.dropped", { kinds: droppedKinds.join(", ") }) }}
-      </p>
+    <div class="fc-form__builders">
+      <fieldset class="fc-form__interventions" data-testid="intervention-builder">
+        <legend class="eyebrow">{{ t("forecast.form.interventions") }}</legend>
+        <div class="fc-form__rules" data-testid="intervention-rules">
+          <p>{{ t("forecast.form.rules.input") }}</p>
+          <p>{{ t("forecast.form.rules.window") }}</p>
+          <p class="fc-form__unavailable" data-testid="mechanism-unavailable">{{ t("forecast.form.rules.unavailable") }}</p>
+        </div>
+        <p v-if="droppedKinds.length" class="field__error" data-testid="dropped-interventions">
+          {{ t("forecast.form.dropped", { kinds: droppedKinds.join(", ") }) }}
+        </p>
 
-      <ol v-if="drafts.length" class="fc-form__drafts">
-        <li
-          v-for="(draft, index) in drafts"
-          :key="draft.key"
-          class="fc-draft"
-          data-testid="intervention-row"
-          :data-index="index"
-        >
-          <div class="fc-draft__head">
-            <span class="mono fc-draft__kind">{{ t("forecast.form.hard", { n: index + 1 }) }}</span>
-            <button
-              type="button"
-              class="btn btn--quiet fc-draft__remove"
-              data-testid="remove-intervention"
-              :disabled="disabled"
-              @click="removeIntervention(draft.key)"
-            >
-              {{ t("forecast.form.remove") }}
-            </button>
-          </div>
-          <div class="fc-draft__fields">
-            <div class="field">
-              <label class="field__label" :for="fid(`iv-${draft.key}-variable`)">{{ t("forecast.form.ivVariable") }}</label>
-              <select
-                :id="fid(`iv-${draft.key}-variable`)"
-                v-model="draft.variable"
-                class="field__input"
-                data-testid="iv-variable"
+        <ol v-if="drafts.length" class="fc-form__drafts">
+          <li
+            v-for="(draft, index) in drafts"
+            :key="draft.key"
+            class="fc-draft"
+            data-testid="intervention-row"
+            :data-index="index"
+          >
+            <div class="fc-draft__head">
+              <span class="mono fc-draft__kind">{{ t("forecast.form.hard", { n: index + 1 }) }}</span>
+              <button
+                type="button"
+                class="btn btn--quiet fc-draft__remove"
+                data-testid="remove-intervention"
                 :disabled="disabled"
-                :aria-invalid="errorsByDraft.get(draft.key)?.variable ? 'true' : undefined"
-                @change="onVariableChange(draft)"
+                @click="removeIntervention(draft.key)"
               >
-                <option v-for="v in variables" :key="v.variable_id" :value="v.variable_id">{{ v.variable_id }}</option>
-              </select>
+                {{ t("forecast.form.remove") }}
+              </button>
             </div>
-            <div class="field">
-              <label class="field__label" :for="fid(`iv-${draft.key}-entity`)">{{ t("forecast.form.ivEntity") }}</label>
-              <select
-                :id="fid(`iv-${draft.key}-entity`)"
-                v-model="draft.entityId"
-                class="field__input"
-                data-testid="iv-entity"
-                :disabled="disabled"
-                @change="onEntityChange(draft)"
-              >
-                <option v-for="e in entitiesFor(draft.variable)" :key="e.entity_id" :value="e.entity_id">
-                  {{ e.display_name }} · {{ e.primary_kind }}
-                </option>
-              </select>
-            </div>
-            <div class="field">
-              <label class="field__label" :for="fid(`iv-${draft.key}-value`)">{{ t("forecast.form.ivValue") }}</label>
-              <select
-                :id="fid(`iv-${draft.key}-value`)"
-                v-model="draft.value"
-                class="field__input mono"
-                data-testid="iv-value"
-                :disabled="disabled"
-                :aria-invalid="errorsByDraft.get(draft.key)?.value ? 'true' : undefined"
-              >
-                <option value="" disabled>{{ t("forecast.form.chooseValue") }}</option>
-                <option
-                  v-if="draft.value !== '' && !(domainFor(draft.variable, draft.entityId) ?? []).includes(draft.value)"
-                  :value="draft.value"
-                  disabled
-                  data-testid="iv-value-invalid"
+            <div class="fc-draft__fields">
+              <div class="field">
+                <label class="field__label" :for="fid(`iv-${draft.key}-variable`)">{{ t("forecast.form.ivVariable") }}</label>
+                <select
+                  :id="fid(`iv-${draft.key}-variable`)"
+                  v-model="draft.variable"
+                  class="field__input"
+                  data-testid="iv-variable"
+                  :disabled="disabled"
+                  :aria-invalid="errorsByDraft.get(draft.key)?.variable ? 'true' : undefined"
+                  @change="onVariableChange(draft)"
                 >
-                  {{ t("forecast.form.notInDomain", { value: draft.value }) }}
-                </option>
-                <option
-                  v-for="value in domainFor(draft.variable, draft.entityId) ?? []"
-                  :key="value"
-                  :value="value"
-                  data-testid="iv-value-option"
+                  <option v-for="v in variables" :key="v.variable_id" :value="v.variable_id">{{ v.variable_id }}</option>
+                </select>
+              </div>
+              <div class="field">
+                <label class="field__label" :for="fid(`iv-${draft.key}-entity`)">{{ t("forecast.form.ivEntity") }}</label>
+                <select
+                  :id="fid(`iv-${draft.key}-entity`)"
+                  v-model="draft.entityId"
+                  class="field__input"
+                  data-testid="iv-entity"
+                  :disabled="disabled"
+                  @change="onEntityChange(draft)"
                 >
-                  {{ value }}
-                </option>
-              </select>
+                  <option v-for="e in entitiesFor(draft.variable)" :key="e.entity_id" :value="e.entity_id">
+                    {{ e.display_name }} · {{ e.primary_kind }}
+                  </option>
+                </select>
+              </div>
+              <div class="field">
+                <label class="field__label" :for="fid(`iv-${draft.key}-value`)">{{ t("forecast.form.ivValue") }}</label>
+                <select
+                  :id="fid(`iv-${draft.key}-value`)"
+                  v-model="draft.value"
+                  class="field__input mono"
+                  data-testid="iv-value"
+                  :disabled="disabled"
+                  :aria-invalid="errorsByDraft.get(draft.key)?.value ? 'true' : undefined"
+                >
+                  <option value="" disabled>{{ t("forecast.form.chooseValue") }}</option>
+                  <option
+                    v-if="draft.value !== '' && !(domainFor(draft.variable, draft.entityId) ?? []).includes(draft.value)"
+                    :value="draft.value"
+                    disabled
+                    data-testid="iv-value-invalid"
+                  >
+                    {{ t("forecast.form.notInDomain", { value: draft.value }) }}
+                  </option>
+                  <option
+                    v-for="value in domainFor(draft.variable, draft.entityId) ?? []"
+                    :key="value"
+                    :value="value"
+                    data-testid="iv-value-option"
+                  >
+                    {{ value }}
+                  </option>
+                </select>
+              </div>
+              <div class="field fc-form__narrow">
+                <label class="field__label" :for="fid(`iv-${draft.key}-start`)">{{ t("forecast.form.start") }}</label>
+                <input
+                  :id="fid(`iv-${draft.key}-start`)"
+                  v-model.number="draft.start"
+                  class="field__input mono"
+                  type="number"
+                  min="0"
+                  step="1"
+                  inputmode="numeric"
+                  data-testid="iv-start"
+                  :disabled="disabled"
+                  :aria-invalid="errorsByDraft.get(draft.key)?.window ? 'true' : undefined"
+                  :aria-describedby="fid(`iv-${draft.key}-window`)"
+                />
+              </div>
+              <div class="field fc-form__narrow">
+                <label class="field__label" :for="fid(`iv-${draft.key}-end`)">{{ t("forecast.form.end") }}</label>
+                <input
+                  :id="fid(`iv-${draft.key}-end`)"
+                  v-model.number="draft.end"
+                  class="field__input mono"
+                  type="number"
+                  min="1"
+                  :max="Number.isInteger(horizonNumber) ? horizonNumber : undefined"
+                  step="1"
+                  inputmode="numeric"
+                  data-testid="iv-end"
+                  :disabled="disabled"
+                  :aria-invalid="errorsByDraft.get(draft.key)?.window ? 'true' : undefined"
+                  :aria-describedby="fid(`iv-${draft.key}-window`)"
+                />
+              </div>
             </div>
-            <div class="field fc-form__narrow">
-              <label class="field__label" :for="fid(`iv-${draft.key}-start`)">{{ t("forecast.form.start") }}</label>
-              <input
-                :id="fid(`iv-${draft.key}-start`)"
-                v-model.number="draft.start"
-                class="field__input mono"
-                type="number"
-                min="0"
-                step="1"
-                inputmode="numeric"
-                data-testid="iv-start"
+            <p :id="fid(`iv-${draft.key}-window`)" class="fc-draft__window mono" data-testid="iv-window">
+              <template v-if="transitions(draft)">
+                [{{ draft.start }}, {{ draft.end }}) · {{ t("forecast.form.transitions", { list: transitions(draft) }) }}
+              </template>
+            </p>
+            <ul class="fc-draft__errors">
+              <li v-for="(message, field) in errorsByDraft.get(draft.key)" v-show="message" :key="field" class="field__error" :data-testid="`iv-error-${field}`">
+                {{ message }}
+              </li>
+            </ul>
+          </li>
+        </ol>
+        <p v-else class="step-hint" data-testid="no-interventions">
+          {{ evidenceDrafts.length ? t("forecast.form.noInterventionsConditional") : t("forecast.form.noInterventions") }}
+        </p>
+        <div>
+          <button
+            type="button"
+            class="btn"
+            data-testid="add-intervention"
+            :disabled="disabled || !variables.length || drafts.length >= MAX_INTERVENTIONS"
+            @click="addIntervention"
+          >
+            {{ t("forecast.form.add") }}
+          </button>
+        </div>
+      </fieldset>
+
+      <fieldset class="fc-form__interventions fc-form__evidence" data-testid="evidence-builder">
+        <legend class="eyebrow">{{ t("forecast.form.evidence.heading") }}</legend>
+        <div class="fc-form__rules" data-testid="evidence-rules">
+          <p class="fc-form__principle" data-testid="evidence-principle">{{ t("forecast.form.evidence.rule") }}</p>
+          <p>{{ t("forecast.form.evidence.detail") }}</p>
+        </div>
+
+        <ol v-if="evidenceDrafts.length" class="fc-form__drafts">
+          <li
+            v-for="(draft, index) in evidenceDrafts"
+            :key="draft.key"
+            class="fc-draft fc-draft--evidence"
+            data-testid="evidence-row"
+            :data-index="index"
+          >
+            <div class="fc-draft__head">
+              <span class="mono fc-draft__kind">{{ t("forecast.form.evidence.row", { n: index + 1 }) }}</span>
+              <button
+                type="button"
+                class="btn btn--quiet fc-draft__remove"
+                data-testid="remove-evidence"
                 :disabled="disabled"
-                :aria-invalid="errorsByDraft.get(draft.key)?.window ? 'true' : undefined"
-                :aria-describedby="fid(`iv-${draft.key}-window`)"
-              />
+                @click="removeEvidence(draft.key)"
+              >
+                {{ t("forecast.form.remove") }}
+              </button>
             </div>
-            <div class="field fc-form__narrow">
-              <label class="field__label" :for="fid(`iv-${draft.key}-end`)">{{ t("forecast.form.end") }}</label>
-              <input
-                :id="fid(`iv-${draft.key}-end`)"
-                v-model.number="draft.end"
-                class="field__input mono"
-                type="number"
-                min="1"
-                :max="Number.isInteger(horizonNumber) ? horizonNumber : undefined"
-                step="1"
-                inputmode="numeric"
-                data-testid="iv-end"
-                :disabled="disabled"
-                :aria-invalid="errorsByDraft.get(draft.key)?.window ? 'true' : undefined"
-                :aria-describedby="fid(`iv-${draft.key}-window`)"
-              />
+            <div class="fc-draft__fields">
+              <div class="field">
+                <label class="field__label" :for="fid(`ev-${draft.key}-variable`)">{{ t("forecast.form.ivVariable") }}</label>
+                <select
+                  :id="fid(`ev-${draft.key}-variable`)"
+                  v-model="draft.variable"
+                  class="field__input"
+                  data-testid="ev-variable"
+                  :disabled="disabled"
+                  :aria-invalid="errorsByEvidence.get(draft.key)?.variable ? 'true' : undefined"
+                  @change="onVariableChange(draft)"
+                >
+                  <option v-for="v in variables" :key="v.variable_id" :value="v.variable_id">{{ v.variable_id }}</option>
+                </select>
+              </div>
+              <div class="field">
+                <label class="field__label" :for="fid(`ev-${draft.key}-entity`)">{{ t("forecast.form.ivEntity") }}</label>
+                <select
+                  :id="fid(`ev-${draft.key}-entity`)"
+                  v-model="draft.entityId"
+                  class="field__input"
+                  data-testid="ev-entity"
+                  :disabled="disabled"
+                  @change="onEntityChange(draft)"
+                >
+                  <option v-for="e in entitiesFor(draft.variable)" :key="e.entity_id" :value="e.entity_id">
+                    {{ e.display_name }} · {{ e.primary_kind }}
+                  </option>
+                </select>
+              </div>
+              <div class="field fc-form__narrow">
+                <label class="field__label" :for="fid(`ev-${draft.key}-time`)">{{ t("forecast.form.evidence.time") }}</label>
+                <input
+                  :id="fid(`ev-${draft.key}-time`)"
+                  v-model.number="draft.time"
+                  class="field__input mono"
+                  type="number"
+                  min="0"
+                  :max="horizonMax ?? undefined"
+                  step="1"
+                  inputmode="numeric"
+                  data-testid="ev-time"
+                  :disabled="disabled"
+                  :aria-invalid="errorsByEvidence.get(draft.key)?.time || errorsByEvidence.get(draft.key)?.key ? 'true' : undefined"
+                />
+              </div>
+              <div class="field">
+                <label class="field__label" :for="fid(`ev-${draft.key}-value`)">{{ t("forecast.form.evidence.value") }}</label>
+                <select
+                  :id="fid(`ev-${draft.key}-value`)"
+                  v-model="draft.value"
+                  class="field__input mono"
+                  data-testid="ev-value"
+                  :disabled="disabled"
+                  :aria-invalid="errorsByEvidence.get(draft.key)?.value ? 'true' : undefined"
+                >
+                  <option value="" disabled>{{ t("forecast.form.chooseValue") }}</option>
+                  <option
+                    v-if="draft.value !== '' && !(domainFor(draft.variable, draft.entityId) ?? []).includes(draft.value)"
+                    :value="draft.value"
+                    disabled
+                    data-testid="ev-value-invalid"
+                  >
+                    {{ t("forecast.form.notInDomain", { value: draft.value }) }}
+                  </option>
+                  <option
+                    v-for="value in domainFor(draft.variable, draft.entityId) ?? []"
+                    :key="value"
+                    :value="value"
+                    data-testid="ev-value-option"
+                  >
+                    {{ value }}
+                  </option>
+                </select>
+              </div>
             </div>
-          </div>
-          <p :id="fid(`iv-${draft.key}-window`)" class="fc-draft__window mono" data-testid="iv-window">
-            <template v-if="transitions(draft)">
-              [{{ draft.start }}, {{ draft.end }}) · {{ t("forecast.form.transitions", { list: transitions(draft) }) }}
-            </template>
-          </p>
-          <ul class="fc-draft__errors">
-            <li v-for="(message, field) in errorsByDraft.get(draft.key)" v-show="message" :key="field" class="field__error" :data-testid="`iv-error-${field}`">
-              {{ message }}
-            </li>
-          </ul>
-        </li>
-      </ol>
-      <p v-else class="step-hint" data-testid="no-interventions">{{ t("forecast.form.noInterventions") }}</p>
-      <div>
-        <button
-          type="button"
-          class="btn"
-          data-testid="add-intervention"
-          :disabled="disabled || !variables.length || drafts.length >= MAX_INTERVENTIONS"
-          @click="addIntervention"
-        >
-          {{ t("forecast.form.add") }}
-        </button>
-      </div>
-    </fieldset>
+            <ul class="fc-draft__errors">
+              <li v-for="(message, field) in errorsByEvidence.get(draft.key)" v-show="message" :key="field" class="field__error" :data-testid="`ev-error-${field}`">
+                {{ message }}
+              </li>
+            </ul>
+          </li>
+        </ol>
+        <p v-else class="step-hint" data-testid="no-evidence">{{ t("forecast.form.evidence.none") }}</p>
+        <div>
+          <button
+            type="button"
+            class="btn"
+            data-testid="add-evidence"
+            :disabled="disabled || !variables.length || evidenceDrafts.length >= MAX_EVIDENCE"
+            @click="addEvidence"
+          >
+            {{ t("forecast.form.evidence.add") }}
+          </button>
+        </div>
+      </fieldset>
+    </div>
 
     <div class="fc-form__submit">
       <button type="submit" class="btn btn--primary" data-testid="submit-forecast" :disabled="!canSubmit">
         {{ busy ? t("forecast.form.running") : (submitLabel ?? t("forecast.form.submit")) }}
       </button>
-      <span class="step-hint mono" data-testid="query-kind">
-        {{ t(`forecast.queryKind.${drafts.length ? "interventional" : "observational"}`) }}
-      </span>
+      <span class="step-hint mono" data-testid="query-kind">{{ queryKindLabel }}</span>
       <p v-if="attempted && hasErrors" class="field__error" role="alert" data-testid="form-blocked">
         {{ t("forecast.form.errors.blocked") }}
       </p>
@@ -575,6 +799,21 @@ const fid = (name: string) => `${uid}-${name}`;
   padding: 0 var(--c2p-space-2);
 }
 
+/* The intervention and evidence builders sit side by side when there is room. */
+.fc-form__builders {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 30rem), 1fr));
+  gap: var(--c2p-space-4);
+  align-items: start;
+  min-width: 0;
+}
+
+.fc-form__principle {
+  padding-left: var(--c2p-space-2);
+  border-left: 2px solid var(--c2p-series-baseline);
+  color: var(--c2p-text);
+}
+
 .fc-form__rules {
   display: grid;
   gap: var(--c2p-space-1);
@@ -599,6 +838,10 @@ const fid = (name: string) => `${uid}-${name}`;
   padding: var(--c2p-space-3);
   border-left: 2px solid var(--c2p-series-intervention);
   background: var(--c2p-surface);
+}
+
+.fc-draft--evidence {
+  border-left-color: var(--c2p-series-baseline);
 }
 
 .fc-draft__head {

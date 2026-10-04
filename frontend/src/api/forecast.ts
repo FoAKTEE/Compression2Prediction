@@ -15,8 +15,9 @@ import type {
  * the latest compiled plan and answers 201 with the full result (distributions,
  * provenance, uncertainty) and its report ID. Rejects with 409
  * `model_not_compiled`, 422 (`out_of_bounds`, `unknown_target`,
- * `out_of_domain_intervention`, `invalid_intervention_window`, ...), or 501 for
- * mechanism and policy interventions.
+ * `out_of_domain_intervention`, `invalid_intervention_window`,
+ * `unknown_evidence_key`, `out_of_domain_evidence`, `evidence_on_target`,
+ * `impossible_evidence`, ...), or 501 for mechanism and policy interventions.
  */
 export async function runForecast(projectId: string, request: ForecastRequest): Promise<ForecastResult> {
   const { data } = await apiClient.post<ForecastResult>(`/forecast/projects/${seg(projectId)}/forecasts`, request);

@@ -1,5 +1,5 @@
 /** Small display helpers shared by the forecast, report, and history views. */
-import type { Intervention } from "../../api/types";
+import type { EvidenceObservation, Intervention } from "../../api/types";
 import { htmlLang, isLocale } from "../../i18n";
 
 /** `crew_capacity = high · ent_repair_crew · [0, 2)`: the half-open window as served. */
@@ -7,6 +7,11 @@ export function describeIntervention(iv: Intervention): string {
   const target = iv.kind === "hard" ? `${iv.target_variable} = ${iv.value ?? "?"}` : `${iv.target_variable} ← ${iv.mechanism_id ?? "?"}`;
   const entity = iv.target_entity_id ? ` · ${iv.target_entity_id}` : "";
   return `${target}${entity} · [${iv.start_step}, ${iv.end_step_exclusive})`;
+}
+
+/** `pump_alarm = on · ent_pump_station · t=1`: one observed key and its value. */
+export function describeEvidence(e: EvidenceObservation): string {
+  return `${e.variable} = ${e.value} · ${e.entity_id} · t=${e.time_index}`;
 }
 
 /** The first 12 hex digits of a `sha256:` hash (the full value goes in a title attribute). */

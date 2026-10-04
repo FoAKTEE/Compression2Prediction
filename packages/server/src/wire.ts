@@ -375,7 +375,13 @@ export interface ExampleResponse extends ExampleSummary {
 // ---------------------------------------------------------------- forecast
 
 export type InterventionKind = "hard" | "mechanism" | "policy";
-export type QueryKind = "observational" | "interventional";
+/**
+ * `observational`: no evidence, no interventions. `conditional`: evidence and
+ * no interventions. `interventional`: at least one intervention, with or
+ * without evidence (the intervened model is then conditioned on it).
+ */
+export type QueryKind = "observational" | "conditional" | "interventional";
+export const QUERY_KINDS: readonly QueryKind[] = Object.freeze(["observational", "conditional", "interventional"]);
 /** `identified_causal_effect` is never produced (guide §8.3). */
 export type EffectStatus = "not_applicable" | "model_based_intervention";
 
@@ -389,6 +395,19 @@ export interface Intervention {
   end_step_exclusive: number;
 }
 
+/**
+ * One observed value of a plan key `(model scenario, variable, entity_id,
+ * time_index)` (guide §8.1, D26). Conditioning updates beliefs and never edits
+ * a mechanism: every scenario of the run is conditioned on the same evidence.
+ */
+export interface EvidenceObservation {
+  variable: string;
+  entity_id: string;
+  time_index: number;
+  /** A value of the variable's domain for the entity's kind. */
+  value: string;
+}
+
 export interface ForecastRequest {
   scenario_id?: string;
   query_kind: QueryKind;
@@ -400,7 +419,16 @@ export interface ForecastRequest {
   /** Server extension: particle budget for sampled inference, bounded by config. */
   particles?: number;
   interventions: Intervention[];
+  /**
+   * Evidence to condition on (D26), at most `maxEvidence` distinct keys. Never
+   * on the target at a forecast step; zero-probability evidence is a 422
+   * `impossible_evidence`, never repaired. Omitted or empty: no conditioning.
+   */
+  evidence?: EvidenceObservation[];
 }
+
+/** `evidence` when the run is conditioned on at least one observation. */
+export type Conditioning = "none" | "evidence";
 
 export type RunStatus = "pending" | "running" | "completed" | "failed";
 
@@ -487,11 +515,17 @@ export interface PredictionScope {
   step_minutes: number | null;
   information_cutoff: string | null;
   initial_belief: { requested_ref: string | null; source: "model_initial"; keys: KeyJson[] };
-  conditioning: "none";
+  conditioning: Conditioning;
+  /** The evidence every scenario is conditioned on, in request order; empty when `conditioning` is `none`. */
+  evidence: EvidenceObservation[];
   interpretation: string;
 }
 
-/** Per-step distributions of one scenario (baseline or intervention). */
+/**
+ * Per-step distributions of one scenario (baseline or intervention). Under
+ * evidence the baseline is the conditional baseline (`query_kind`
+ * `conditional`) and the intervention is conditioned on the same evidence.
+ */
 export interface ScenarioResult {
   scenario_id: string;
   is_baseline: boolean;
@@ -761,6 +795,8 @@ export interface ReportAssumptions {
   kernels: KernelProvenance[];
   priors: ReportPrior[];
   interventions: Intervention[];
+  /** The evidence the run is conditioned on (D26); empty when unconditioned (and for reports stored before D26). */
+  evidence: EvidenceObservation[];
   notes: string[];
 }
 
@@ -775,6 +811,8 @@ export interface ReportExtensions {
   base_scenario_id?: string;
   query_kind?: QueryKind;
   effect_status?: EffectStatus;
+  /** `evidence` when every scenario is conditioned on `assumptions.evidence` (D26). */
+  conditioning?: Conditioning;
   step_minutes?: number | null;
   plan_version?: string;
   graph_hash?: string;
