@@ -322,7 +322,7 @@ identification fixture: A and B agree observationally; do(X=1): P_A(Y=1)=1, P_B(
 
 ### N6 — Compression & scaling
 
-- status: `pending`
+- status: `in-progress`
 - depends: N5, N7 scoring contract (N7.3), the memo (ADOPT-NOW set, §4.3–§4.4)
 - substages:
   - N6.1 pooling/shrinkage (`compress/families.py`; memo tests `test_pooling`, `test_shrinkage`)
@@ -345,10 +345,24 @@ identification fixture: A and B agree observationally; do(X=1): P_A(Y=1)=1, P_B(
   - memo §5.2 inert-hub and two-path fixtures
   - ranking leaves kernel hashes unchanged
   - N6.rank (memo §4.4, binding per decisions D5): the `test_*` assertions listed for N6.rank above
-- commits:
-- verifier:
+- commits: N6.1-N6.3 `feat(compress)` commit; N6.4/N6.5/N6.rank pending
+- verifier (run by the orchestrator):
 
 ```text
+$ npx vitest run (N6.1-N6.3 suites)
+ ✓ |core| packages/core/test/compress.abstraction.test.ts (3 tests) 75ms
+ ✓ |core| packages/core/test/compress.aggregation.test.ts (4 tests) 76ms
+ ✓ |core| packages/core/test/compress.families.test.ts (4 tests) 489ms
+   ✓ SHRINK (1)
+     ✓ test_shrinkage 427ms
+ ✓ |core| packages/core/test/compress.counts.test.ts (4 tests) 1464ms
+   ✓ restricted counting (4)
+     ✓ samples count steps from injected uniforms 1312ms
+ Test Files  4 passed (4)
+      Tests  15 passed (15)
+$ npx tsc -b packages/core packages/core/test -> exit 0 (compress exports wired)
+test_scaling_arithmetic reproduces memo 5.1: 48,600,000 / 486,000 / 2,916 / 72 / 72; budgets 69 and 1110/880/624/439/439; count states 14,196 / 14,028; joint 7,992,000,035,023,637,251,067,904
+pending: N6.4 slicing, N6.5 particles, N6.rank (coder B)
 ```
 
 ### N7 — Learning & evaluation

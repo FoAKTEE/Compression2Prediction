@@ -8,3 +8,7 @@ export {
   structureBits,
 } from "./scoring.js";
 export type { FamilyPrior } from "./scoring.js";
+export * from "./families.js";
+export * from "./aggregation.js";
+export * from "./abstraction.js";
+export * from "./counts.js";
