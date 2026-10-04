@@ -11,8 +11,8 @@ Read in this order before planning:
    reference code (§3 of this file).
 3. `progress/prompt/category_theory_scaling_memo.md` (the "memo"): a design memo on
    categorical data structuring and on keeping sample complexity bounded when
-   nodes and edges multiply. Its ADOPT-NOW items and §3.2 acceptance gates bind
-   N6. Its §3.1 field sketches inform N2, N4, N5, and N7. Its statements are
+   nodes and edges multiply. Its ADOPT-NOW items and §4.3–§4.4 algorithms and
+   acceptance gates bind N6. Its §4.1–§4.2 typed contracts inform N2, N4, N5, and N7. Its statements are
    tagged [E] established, [D] derived, or [P] proposal. Treat the [P] items as
    design choices to review, not facts.
 4. `ref-code/MiroFish/` (read-only reference, §3).
@@ -56,7 +56,7 @@ Consequences for implementation:
   abstraction diagnostic $\delta$ (guide §6.5) must be reported alongside it.
   Giving two entities the same role label does not license merging their states.
 
-### 1.2 Scaling strategy: what to do when nodes and edges explode (memo §2–§4)
+### 1.2 Scaling strategy: what to do when nodes and edges explode (memo §2–§5)
 
 Joint states grow like $k^n$. A kernel table grows like $k^{d}$ in the in-degree $d$.
 Mechanism instances grow like entities × ticks. Per-instance fitting therefore
@@ -90,7 +90,7 @@ assumption, so each must also carry a diagnostic:
    gated on held-out NLL degrading by at most a pre-declared $\tau_{\text{bits}}$.
    Removing an edge for predictive reasons is not evidence of no causal effect.
 
-Worked example (memo §4, arithmetic verified): 1,000 agents, 3 states, 5 ternary
+Worked example (memo §5.1, arithmetic verified): 1,000 agents, 3 states, 5 ternary
 inputs, 6 families. Free parameters go from **486,000** (stationary per-entity
 tables) to **2,916** (family tying) to **72** (+ aggregation). That is 0.41 vs 69
 vs 2,778 average visits per row on 100,000 transitions.
@@ -211,11 +211,11 @@ sets are disjoint may run in parallel.
 |---|---|---|---|---|
 | N0 | Bootstrap & design | none | `.gitignore`, hook wiring (§7), `mission.json`, `pyproject.toml`, `progress/c2p/{DAG,decisions,provenance}.md`, empty package + smoke test | `python3 -m pytest -q` green; hook rejects a bad title; `git status` shows no `Chandra/` or `ref-code/` |
 | N1 | Finite kernel core | N0 | port guide §12.1/§12.2 to `src/c2p/kernels.py` + pytest | all 17 reference tests pass, including the §13 numbers (0.36, 0.39, 0.25) / (0.09, 0.28, 0.63) |
-| N2 | World schemas | N0 | kinds/subtypes/roles registry, entity, event vs occurrence, evidence/claim with source span + hash + availability time, agent binding; relational schema with typed foreign keys + checked path equations, kind-indexed domains `VariableDef.domain_by_kind` (memo §1.1, §1.4, §3.1); conflicting claims kept with `conflict_group_id` (memo §1.7); strict validation | identity across documents; same-name entities not merged; roles round-trip with half-open intervals, inverted intervals and cross-namespace links rejected; subtype graph is a DAG; `"false"` rejected; events/locations/topics/artifacts never eligible; a value of the wrong kind's domain is rejected |
+| N2 | World schemas | N0 | kinds/subtypes/roles registry, entity, event vs occurrence, evidence/claim with source span + hash + availability time, agent binding; relational schema with typed foreign keys + checked path equations, kind-indexed domains `VariableDef.domain_by_kind` (memo §1.1, §1.4, §4.1); conflicting claims kept with `conflict_group_id` (memo §1.7); strict validation | identity across documents; same-name entities not merged; roles round-trip with half-open intervals, inverted intervals and cross-namespace links rejected; subtype graph is a DAG; `"false"` rejected; events/locations/topics/artifacts never eligible; a value of the wrong kind's domain is rejected |
 | N3 | Canonical store & run artifacts | N2 | sqlite3 + validated JSON; immutable content-addressed versions; run layout (guide §9.1, adapted to `runs/<run_id>/…` outside the repo or gitignored) | idempotent writes; scenario namespaces cannot contaminate each other; path traversal rejected |
-| N4 | Hypergraph + compiler | N1, N2 | variable registry, mechanism spec (`mechanism.v1`), ordered named ports, `TemplateSpec` with family keys (memo §1.2, §1.8, §3.1), incidence representation, compiler → execution plan | swapped named ports, incompatible domains/order/units, missing kernels, multiple writers, same-time cycles fail; valid unrolled feedback compiles; future reads rejected; reordering entities changes neither family assignment nor domain indices; no knowledge/event edge is ever promoted to a mechanism |
+| N4 | Hypergraph + compiler | N1, N2 | variable registry, mechanism spec (`mechanism.v1`), ordered named ports, `TemplateSpec` with family keys (memo §1.2, §1.8, §4.1), incidence representation, compiler → execution plan | swapped named ports, incompatible domains/order/units, missing kernels, multiple writers, same-time cycles fail; valid unrolled feedback compiles; future reads rejected; reordering entities changes neither family assignment nor domain indices; no knowledge/event edge is ever promoted to a mechanism |
 | N5 | Inference & interventions | N4 | forecast, Bayes filter, hard / mechanism / policy interventions with half-open intervals | surgery removes the original input dependence and leaves others fixed; §8.3 models A/B agree observationally and give 1 vs 1/2 under do(X=1); counterfactual requests rejected |
-| N6 | Compression & scaling | N5, N7 scoring contract, the memo | memo ADOPT-NOW set (§1.2 of this file, memo §3.2): family count pooling, frozen-family conditional Dirichlet shrinkage, declared aggregators, sparse rows with prior fallback, budget checks before expansion, lumpability diagnostic (exhaustive on small fixtures, sampled = uncertified), restricted count model, lazy backward slicing, particles | pooling equals concatenated eligible counts, and origin/regime/interface mismatches fail; an unseen row equals its prior and is flagged; a lumpable partition gives δ = 0 and a non-lumpable one δ > 0; $\mathrm{TV}\le\min(1,h\delta)$ holds from every point-mass start; sliced and full exact answers agree, including evidence on another branch; small exchangeable kernels agree with the count generator; parameter counts reproduce memo §4 (486,000 / 2,916 / 72) |
+| N6 | Compression & scaling | N5, N7 scoring contract, the memo | memo ADOPT-NOW set (§1.2 of this file, memo §4.3–§4.4): family count pooling, frozen-family conditional Dirichlet shrinkage, declared aggregators, sparse rows with prior fallback, budget checks before expansion, lumpability diagnostic (exhaustive on small fixtures, sampled = uncertified), restricted count model, lazy backward slicing, particles | pooling equals concatenated eligible counts, and origin/regime/interface mismatches fail; an unseen row equals its prior and is flagged; a lumpable partition gives δ = 0 and a non-lumpable one δ > 0; $\mathrm{TV}\le\min(1,h\delta)$ holds from every point-mass start; sliced and full exact answers agree, including evidence on another branch; small exchangeable kernels agree with the count generator; parameter counts reproduce memo §5.1 (486,000 / 2,916 / 72) |
 | N7 | Learning & evaluation | N1, N3 (N5 for forecasts) | transition datasets with complete rounds (§9.3), Dirichlet fitting, prequential/MDL scoring contract (memo §2.7), rolling-origin backtest, NLL bits / Brier / calibration, baselines, uncertainty decomposition | sequential-predictive and log-gamma code lengths agree in bits (ordered sequence, no multinomial coefficient); an unseen row returns the prior and is flagged as such; no cutoff, entity/episode, or hyperparameter leakage; baselines use the identical split; an impossible outcome gives visible infinite NLL/error |
 | N8 | Extraction pipeline | N2, N3 | world-mode extraction prompt (guide §10.2), entity resolution, provenance; OpenAI-compatible client patterned on MiroFish `llm_client.py`; all tests mocked | the six-entity fixture (2 people, 1 org, 1 meeting, 1 location, 1 document) keeps all six; only eligible actors are emitted as agent candidates; world count and agent count are separate outputs |
 | N9 | Simulation adapter (observer) | N3, N4, N5 | `transition.v1` records, run manifest, replay without LLM calls; optional adapter to MiroFish/OASIS action logs kept in `adapters/` | inactive / explicit-no-action / failed / missing remain distinct; replay reproduces the numeric state updates; one state authority per variable |
