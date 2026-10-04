@@ -42,6 +42,7 @@ async function loadProject(projectId: string): Promise<void> {
     if (props.projectId === projectId) {
       projectStore.setProject(project);
       applyServerProgress(project);
+      applyRequestedStep();
     }
   } catch (error) {
     if (props.projectId === projectId) projectError.value = error;
@@ -82,9 +83,20 @@ async function refreshProject(): Promise<void> {
 }
 
 /**
+ * Deep links on a server project: once the project record has loaded,
+ * `?step=N` opens step N if the server's progress already completes steps
+ * 1..N-1. Otherwise the gating holds and the view stays on the step it shows.
+ */
+function applyRequestedStep(): void {
+  if (demo) return;
+  const step = Number(route?.query.step);
+  if (isStepNumber(step)) projectStore.goToStep(step);
+}
+
+/**
  * Demo links: with `?example=1`, `&step=N` opens step N directly, marking the
  * earlier steps complete, so each step's bundled example can be viewed without
- * a server. Without `example=1` the step gating is unchanged.
+ * a server.
  */
 function applyExampleStep(): void {
   if (!demo) return;

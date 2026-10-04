@@ -35,7 +35,6 @@ import {
   variableKeyString,
 } from "@c2p/core";
 import type {
-  CertificateScope,
   CertificateScopeInput,
   Coefficients,
   EnvelopeFields,
@@ -65,10 +64,8 @@ const integrityError = (message: string) => new HttpError(500, "integrity_error"
 
 type StoredRun = ForecastRun & Partial<ForecastResult>;
 
-/** The D22 response plus the certificates' hashed scope (D23); null when the run is conditioned and nothing is certified. */
-export interface RankResponse extends RankDiagnosticsResponse {
-  certificate_scope: CertificateScope | null;
-}
+/** The D22 response with the certificates' hashed scope (D23); the wire contract's `RankDiagnosticsResponse`. */
+export type RankResponse = RankDiagnosticsResponse;
 
 /** The recorded plan references; a bare run row cannot be ranked. */
 function planRefs(run: StoredRun) {

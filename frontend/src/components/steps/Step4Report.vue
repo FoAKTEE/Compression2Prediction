@@ -11,6 +11,7 @@ import { projectStore } from "../../store/project";
 import { EXAMPLE_INTERVENTION_REPORT_ID, exampleReport, exampleReportSummaries } from "../forecast/examples";
 import { formatTimestamp } from "../forecast/format";
 import ReportBody from "../report/ReportBody.vue";
+import SyntheticBacktestPanel from "../report/SyntheticBacktestPanel.vue";
 import StateNotice from "../StateNotice.vue";
 import StepPanel from "./StepPanel.vue";
 
@@ -164,6 +165,7 @@ const notice = computed(() => (failure.value === null ? null : errorNotice(failu
       :title="t('step4.empty.title')"
       :body="t('step4.empty.body')"
     />
+    <SyntheticBacktestPanel :project-id="projectId" :demo="demo" />
   </StepPanel>
 </template>
 

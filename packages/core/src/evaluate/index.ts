@@ -1,4 +1,4 @@
-/** Evaluation: the frozen selection gate and per-prediction scores (backtests follow in N7.4). */
+/** Evaluation: the frozen selection gate, per-prediction scores, backtests, baselines, and the synthetic incident backtest. */
 
 export {
   brier,
@@ -26,3 +26,4 @@ export * from "./metrics.js";
 export * from "./baselines.js";
 export * from "./backtest.js";
 export * from "./uncertainty.js";
+export * from "./synthetic.js";

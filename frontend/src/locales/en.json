@@ -551,6 +551,33 @@
     "empty": {
       "title": "No report yet",
       "body": "Each forecast run creates a report. Run a forecast in step 3."
+    },
+    "backtest": {
+      "heading": "Synthetic backtest",
+      "simulatedBadge": "Simulated data",
+      "disclaimer": "This backtest checks the software pipeline on simulated data: incident episodes generated from the hand-specified guide §13 kernels. The bits show how well each forecaster recovers that generator. They are not real-world accuracy and do not validate the model's assumptions about reality.",
+      "demo": "The synthetic backtest runs on the server; the offline example has none.",
+      "episodes": "Episodes",
+      "seed": "Seed",
+      "origins": "Forecast origins",
+      "horizons": "Horizons (steps, comma-separated)",
+      "run": "Run synthetic backtest",
+      "running": "Running…",
+      "horizonsInvalid": "Give the horizons as positive whole numbers separated by commas, for example 1, 2, 3.",
+      "rejected": "The server rejected the backtest request",
+      "dataOrigin": "Data origin",
+      "request": "Request",
+      "requestValue": "{episodes} episodes · seed {seed} · {origins} origins",
+      "cases": "Scored forecasts",
+      "generator": "Generator",
+      "population": "Population hash",
+      "caption": "Mean bits per prediction (held-out code length) by horizon; lower is better. The oracle is the generating kernel itself.",
+      "model": "Model",
+      "horizonColumn": "h = {h}",
+      "overall": "All horizons",
+      "oracleNote": "(generating kernel)",
+      "gateAccepted": "Frozen gate {candidate} vs {comparator}: accepted (Δ = {delta} bits, τ = {tau} bits).",
+      "gateRejected": "Frozen gate {candidate} vs {comparator}: not accepted ({reason}; Δ = {delta} bits, τ = {tau} bits)."
     }
   },
   "step5": {
@@ -602,7 +629,12 @@
       "score": "Score",
       "bound": "Influence bound",
       "sampled": "sampled estimate only",
-      "prunable": "Certified prunable"
+      "prunable": "Certified prunable",
+      "scope": "Certificate scope",
+      "scopeValue": "{hash} · horizon {horizon} · conditioning {conditioning}",
+      "noScope": "none (nothing is certified)",
+      "scopeHash": "scope {hash}",
+      "conditioning": "conditioning: {conditioning}"
     }
   },
   "reportBody": {

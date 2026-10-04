@@ -117,6 +117,49 @@ describe("Step5Interaction", () => {
     expect(wrapper.get("[data-testid='rank-hashes']").text()).toBe("unchanged by ranking");
   });
 
+  it("shows the certificate scope hash and conditioning next to certified-prunable entries", async () => {
+    const scopeHash = `sha256:${"5".repeat(64)}`;
+    vi.mocked(getRankDiagnostics).mockResolvedValue({
+      run_id: EXAMPLE_INTERVENTION_RUN_ID,
+      method: "reverse_ppr+tv_path_bound",
+      entries: [
+        { node_id: '["baseline","incident_status","ent_incident_001",2]', node_kind: "variable", score: 0.54, influence_bound: 1, certified_prunable: false },
+        { node_id: '["baseline","supply_status","ent_east_depot",1]', node_kind: "variable", score: 0.12, influence_bound: 0, certified_prunable: true },
+      ],
+      kernel_hashes_unchanged: true,
+      eps_tv: 0.05,
+      certificate_scope: {
+        initial_law_hash: `sha256:${"1".repeat(64)}`,
+        interventions_hash: `sha256:${"2".repeat(64)}`,
+        horizon: 2,
+        conditioning: "none",
+        scope_hash: scopeHash,
+      },
+    });
+    const wrapper = await mountStep();
+    const rows = wrapper.findAll("[data-testid='rank-row']");
+    expect(rows[0]!.find("[data-testid='rank-scope-hash']").exists()).toBe(false);
+    const certified = rows[1]!.get("[data-testid='rank-prunable']");
+    expect(certified.text()).toContain("Yes");
+    expect(certified.get("[data-testid='rank-scope-hash']").text()).toBe("scope 555555555555…");
+    expect(certified.get("[data-testid='rank-scope-conditioning']").text()).toBe("conditioning: none");
+    expect(certified.get(".rank__scope").attributes("title")).toBe(scopeHash);
+    expect(wrapper.get("[data-testid='rank-scope']").text()).toBe("555555555555… · horizon 2 · conditioning none");
+  });
+
+  it("says nothing is certified when the response has no certificate scope", async () => {
+    vi.mocked(getRankDiagnostics).mockResolvedValue({
+      run_id: EXAMPLE_INTERVENTION_RUN_ID,
+      method: "reverse_ppr+tv_path_bound",
+      entries: [{ node_id: "n", node_kind: "variable", score: 1, influence_bound: 1, certified_prunable: false }],
+      kernel_hashes_unchanged: true,
+      certificate_scope: null,
+    });
+    const wrapper = await mountStep();
+    expect(wrapper.get("[data-testid='rank-scope']").text()).toBe("none (nothing is certified)");
+    expect(wrapper.find("[data-testid='rank-scope-hash']").exists()).toBe(false);
+  });
+
   it("re-runs the selected run's request with an edited intervention", async () => {
     const edited: ForecastResult = {
       ...exampleRunResult(EXAMPLE_INTERVENTION_RUN_ID)!,

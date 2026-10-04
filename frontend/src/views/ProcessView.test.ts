@@ -2,7 +2,7 @@ import { enableAutoUnmount, flushPromises, mount } from "@vue/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { nextTick } from "vue";
 import { ApiError } from "../api/client";
-import { getRankDiagnostics, getRun, listRuns, runForecast } from "../api/forecast";
+import { getRankDiagnostics, getRun, listRuns, listSyntheticBacktests, runForecast } from "../api/forecast";
 import { compileModel, getEligibility, getMechanismGraph, getModel, listMechanisms, listVariables } from "../api/model";
 import { getProjectReport, getReport, listReports } from "../api/report";
 import type { CompileModelResponse, Project } from "../api/types";
@@ -35,7 +35,14 @@ vi.mock("../api/model", () => ({
   importModel: vi.fn(),
   getModel: vi.fn(),
 }));
-vi.mock("../api/forecast", () => ({ runForecast: vi.fn(), listRuns: vi.fn(), getRun: vi.fn(), getRankDiagnostics: vi.fn() }));
+vi.mock("../api/forecast", () => ({
+  runForecast: vi.fn(),
+  listRuns: vi.fn(),
+  getRun: vi.fn(),
+  getRankDiagnostics: vi.fn(),
+  runSyntheticBacktest: vi.fn(),
+  listSyntheticBacktests: vi.fn(),
+}));
 vi.mock("../api/report", () => ({ getReport: vi.fn(), getProjectReport: vi.fn(), listReports: vi.fn() }));
 
 const PROJECT: Project = {
@@ -119,6 +126,8 @@ beforeEach(() => {
   for (const fn of [runForecast, listRuns, getRun, getRankDiagnostics, getReport, getProjectReport, listReports, importWorld]) {
     vi.mocked(fn).mockReset();
   }
+  vi.mocked(listSyntheticBacktests).mockReset();
+  vi.mocked(listSyntheticBacktests).mockResolvedValue([]);
   vi.mocked(listProjectTasks).mockReset();
   vi.mocked(listProjectTasks).mockResolvedValue([]);
   vi.mocked(getModel).mockRejectedValue(new ApiError({ status: 404, code: "model_not_found", message: "no model" }));
@@ -369,9 +378,32 @@ describe("ProcessView", () => {
     expect(getRankDiagnostics).not.toHaveBeenCalled();
   });
 
-  it("ignores ?step without example=1, so step gating still holds", async () => {
+  it("without the server's progress, ?step on a project is ignored, so step gating still holds", async () => {
     const { wrapper } = await mountProcess("p-1", "?step=3");
     expect(currentPanelStep(wrapper)).toBe("1");
     expect(projectStore.isCompleted(1)).toBe(false);
+  });
+
+  it("opens ?step=N on a server project once the server's record completes steps 1..N-1", async () => {
+    vi.mocked(getProject).mockResolvedValue(fullProject());
+    vi.mocked(getWorld).mockResolvedValue({ ...exampleWorld(), project_id: "p-1", world_version: "w-1" });
+    withServerRuns();
+    const { wrapper } = await mountProcess("p-1", "?step=4");
+    expect(currentPanelStep(wrapper)).toBe("4");
+    expect(wrapper.find("[data-testid='example-badge']").exists()).toBe(false);
+    expect(wrapper.find("[data-testid='project-notice']").exists()).toBe(false);
+    expect(getProjectReport).toHaveBeenCalledWith("p-1", EXAMPLE_INTERVENTION_REPORT_ID);
+    expect(wrapper.find("[data-testid='backtest-panel']").exists()).toBe(true);
+    expect(listSyntheticBacktests).toHaveBeenCalledWith("p-1");
+  });
+
+  it("keeps ?step=N locked while an earlier step is incomplete on the server", async () => {
+    withServerWorld();
+    const { wrapper } = await mountProcess("p-1", "?step=3");
+    expect(projectStore.isCompleted(1)).toBe(true);
+    expect(projectStore.isCompleted(2)).toBe(false);
+    expect(currentPanelStep(wrapper)).toBe("1");
+    const two = await mountProcess("p-1", "?step=2");
+    expect(currentPanelStep(two.wrapper)).toBe("2");
   });
 });

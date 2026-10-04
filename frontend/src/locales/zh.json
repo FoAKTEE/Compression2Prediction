@@ -551,6 +551,33 @@
     "empty": {
       "title": "尚无报告",
       "body": "每次预测运行都会生成一份报告。请在步骤 3 中运行预测。"
+    },
+    "backtest": {
+      "heading": "合成回测",
+      "simulatedBadge": "模拟数据",
+      "disclaimer": "此回测在模拟数据上检验软件流程：事件片段由指南 §13 中人工设定的核生成。比特数表示各预测器还原该生成过程的程度。它们不是真实世界的准确度，也不验证模型关于现实的假设。",
+      "demo": "合成回测在服务器上运行；离线示例中没有。",
+      "episodes": "片段数",
+      "seed": "随机种子",
+      "origins": "预测起点数",
+      "horizons": "预测步长（步数，逗号分隔）",
+      "run": "运行合成回测",
+      "running": "运行中…",
+      "horizonsInvalid": "请以逗号分隔的正整数给出预测步长，例如 1, 2, 3。",
+      "rejected": "服务器拒绝了此回测请求",
+      "dataOrigin": "数据来源",
+      "request": "请求",
+      "requestValue": "{episodes} 个片段 · 种子 {seed} · {origins} 个起点",
+      "cases": "已评分的预测",
+      "generator": "生成器",
+      "population": "样本总体哈希",
+      "caption": "按预测步长列出的每次预测平均比特数（留出编码长度），越低越好。oracle 即生成核本身。",
+      "model": "模型",
+      "horizonColumn": "h = {h}",
+      "overall": "全部步长",
+      "oracleNote": "（生成核）",
+      "gateAccepted": "冻结门控 {candidate} 对 {comparator}：通过（Δ = {delta} 比特，τ = {tau} 比特）。",
+      "gateRejected": "冻结门控 {candidate} 对 {comparator}：未通过（{reason}；Δ = {delta} 比特，τ = {tau} 比特）。"
     }
   },
   "step5": {
@@ -602,7 +629,12 @@
       "score": "得分",
       "bound": "影响上界",
       "sampled": "仅有抽样估计",
-      "prunable": "可认证剪枝"
+      "prunable": "可认证剪枝",
+      "scope": "认证范围",
+      "scopeValue": "{hash} · 步长 {horizon} · 条件 {conditioning}",
+      "noScope": "无（未认证任何节点）",
+      "scopeHash": "范围 {hash}",
+      "conditioning": "条件：{conditioning}"
     }
   },
   "reportBody": {

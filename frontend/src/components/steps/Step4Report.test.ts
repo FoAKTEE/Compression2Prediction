@@ -1,8 +1,9 @@
 import { enableAutoUnmount, flushPromises, mount } from "@vue/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { getRun } from "../../api/forecast";
+import { ApiError } from "../../api/client";
+import { getRun, listSyntheticBacktests, runSyntheticBacktest } from "../../api/forecast";
 import { getProjectReport, getReport, listReports } from "../../api/report";
-import type { ForecastReportBody, Project } from "../../api/types";
+import type { BacktestModelSummary, ForecastReportBody, MetricValue, Project, SyntheticBacktestResponse } from "../../api/types";
 import { projectStore } from "../../store/project";
 import { createTestPlugins, serverUnavailable } from "../../test-support";
 import {
@@ -17,7 +18,14 @@ import {
 import Step4Report from "./Step4Report.vue";
 
 vi.mock("../../api/report", () => ({ getReport: vi.fn(), getProjectReport: vi.fn(), listReports: vi.fn() }));
-vi.mock("../../api/forecast", () => ({ getRun: vi.fn(), listRuns: vi.fn(), runForecast: vi.fn(), getRankDiagnostics: vi.fn() }));
+vi.mock("../../api/forecast", () => ({
+  getRun: vi.fn(),
+  listRuns: vi.fn(),
+  runForecast: vi.fn(),
+  getRankDiagnostics: vi.fn(),
+  runSyntheticBacktest: vi.fn(),
+  listSyntheticBacktests: vi.fn(),
+}));
 
 const PROJECT: Project = {
   project_id: "p-1",
@@ -34,6 +42,72 @@ const PROJECT: Project = {
   latest_run_id: EXAMPLE_INTERVENTION_RUN_ID,
   latest_report_id: EXAMPLE_INTERVENTION_REPORT_ID,
 };
+
+function backtestModel(name: string, role: "oracle" | "baseline", bits: MetricValue[], overall: MetricValue): BacktestModelSummary {
+  const metric = (horizon: number | null, value: MetricValue) => ({
+    horizon,
+    count: 40,
+    mean_nll_bits: value,
+    infinite_count: value === "+inf" ? 12 : 0,
+    has_infinite: value === "+inf",
+  });
+  return { name, role, spec_hash: `sha256:${"a".repeat(64)}`, overall: metric(null, overall), by_horizon: bits.map((b, i) => metric(i + 1, b)) };
+}
+
+/** A synthetic backtest as the server returns it (numbers are illustrative test values). */
+function backtest(overrides: Partial<SyntheticBacktestResponse> = {}): SyntheticBacktestResponse {
+  return {
+    schema_version: "synthetic_backtest.v1",
+    scope: "software_pipeline_validation_on_simulated_data",
+    disclaimer: "This backtest validates the SOFTWARE PIPELINE on simulated data. They are not real-world accuracy (guide §7.2).",
+    data_origin: "simulated",
+    request: { episodes: 200, seed: 1, origins: 4, horizons: [1, 2] },
+    generator: {
+      name: "incident_chain.v1",
+      scenario_id: "synthetic_incident",
+      parameter_origin: "hand_specified_illustration",
+      validation_status: "not_empirically_validated",
+      kernels: {},
+      crew_law: { values: ["normal", "high"], probabilities: [0.5, 0.5] },
+      initial_status: "unacknowledged",
+      steps_per_episode: 4,
+      step_minutes: 60,
+      clock_epoch: "2026-01-01T00:00:00Z",
+      random_stream_layout: "c2p.stream.v1",
+    },
+    records: { schema_version: "transition_record.v1", count: 800, origins: ["simulated"], hash: `sha256:${"b".repeat(64)}` },
+    target: { scenario_id: "synthetic_incident", variable_id: "incident_status", values: ["unacknowledged", "acknowledged", "resolved"] },
+    split: "episode",
+    horizons: [1, 2],
+    case_count: 80,
+    population_hash: `sha256:${"c".repeat(64)}`,
+    prediction_ids_hash: `sha256:${"d".repeat(64)}`,
+    outcomes_hash: `sha256:${"e".repeat(64)}`,
+    origins: [],
+    models: [
+      backtestModel("historical_base_rate", "baseline", [1.6, 1.4], 1.5),
+      backtestModel("oracle", "oracle", [1.0, 0.95], 0.975),
+      backtestModel("persistence", "baseline", ["+inf", "+inf"], "+inf"),
+      backtestModel("plain_markov", "baseline", [1.05, 1.0], 1.025),
+    ],
+    gate: {
+      candidate: "plain_markov",
+      comparator: "historical_base_rate",
+      tau_bits: 0.01,
+      protocol_hash: `sha256:${"f".repeat(64)}`,
+      candidate_hash: `sha256:${"a".repeat(64)}`,
+      baseline_hash: `sha256:${"a".repeat(64)}`,
+      accepted: true,
+      reason: "accepted",
+      delta_bits: -0.475,
+      strata_deltas: [],
+    },
+    repo_sha: "abc123",
+    project_id: "p-1",
+    artifact_hash: `sha256:${"9".repeat(64)}`,
+    ...overrides,
+  };
+}
 
 function report(overrides: Partial<ForecastReportBody> = {}): ForecastReportBody {
   return { ...exampleReport(EXAMPLE_INTERVENTION_REPORT_ID)!, project_id: "p-1", ...overrides };
@@ -54,6 +128,9 @@ beforeEach(() => {
   for (const fn of [getReport, getProjectReport, listReports, getRun]) vi.mocked(fn).mockReset();
   vi.mocked(getProjectReport).mockResolvedValue(report());
   vi.mocked(listReports).mockResolvedValue([]);
+  vi.mocked(listSyntheticBacktests).mockReset();
+  vi.mocked(listSyntheticBacktests).mockResolvedValue([]);
+  vi.mocked(runSyntheticBacktest).mockReset();
 });
 
 describe("Step4Report", () => {
@@ -185,5 +262,68 @@ describe("Step4Report", () => {
       `/report/${EXAMPLE_INTERVENTION_REPORT_ID}?example=1`,
     );
     expect(wrapper.emitted("complete")).toHaveLength(1);
+  });
+  it("shows the simulated-data disclaimer and runs a synthetic backtest with the form values", async () => {
+    vi.mocked(runSyntheticBacktest).mockResolvedValue(backtest());
+    const wrapper = await mountStep();
+    const panel = wrapper.get("[data-testid='backtest-panel']");
+    expect(panel.get("[data-testid='backtest-disclaimer']").text()).toMatch(/software pipeline on simulated data/);
+    expect(panel.get("[data-testid='backtest-disclaimer']").text()).toMatch(/not real-world accuracy/);
+    expect(panel.find("[data-testid='backtest-table']").exists()).toBe(false);
+
+    await panel.get("[data-testid='backtest-episodes']").setValue(120);
+    await panel.get("[data-testid='backtest-seed']").setValue(7);
+    await panel.get("[data-testid='backtest-origins']").setValue(3);
+    await panel.get("[data-testid='backtest-horizons']").setValue("1, 2");
+    await panel.get("[data-testid='backtest-form']").trigger("submit");
+    await flushPromises();
+    expect(runSyntheticBacktest).toHaveBeenCalledWith("p-1", { episodes: 120, seed: 7, origins: 3, horizons: [1, 2] });
+
+    // The oracle first; bits to three decimals; +inf as an impossible outcome, never a number.
+    const rows = panel.findAll("[data-testid='backtest-row']");
+    expect(rows.map((r) => r.attributes("data-model"))).toEqual(["oracle", "historical_base_rate", "persistence", "plain_markov"]);
+    expect(rows[0]!.findAll("[data-testid='backtest-cell']").map((c) => c.text())).toEqual(["1.000", "0.950"]);
+    const persistence = panel.get("[data-testid='backtest-row'][data-model='persistence']");
+    for (const cell of persistence.findAll("[data-testid='backtest-cell']")) {
+      expect(cell.attributes("data-kind")).toBe("infinite");
+      expect(cell.text()).toBe("+∞ (impossible outcome)");
+    }
+    expect(persistence.get("[data-testid='backtest-overall']").text()).not.toMatch(/\d/);
+    expect(panel.get("[data-testid='backtest-data-origin']").text()).toBe("simulated");
+    expect(panel.get("[data-testid='backtest-gate']").text()).toBe(
+      "Frozen gate plain_markov vs historical_base_rate: accepted (Δ = -0.475 bits, τ = 0.01 bits).",
+    );
+    expect(panel.get("[data-testid='backtest-server-disclaimer']").text()).toBe(backtest().disclaimer);
+  });
+
+  it("shows the newest stored backtest, rejects bad horizons locally, and explains a 422", async () => {
+    vi.mocked(listSyntheticBacktests).mockResolvedValue([backtest({ case_count: 99 }), backtest({ case_count: 1 })]);
+    const wrapper = await mountStep();
+    const panel = wrapper.get("[data-testid='backtest-panel']");
+    expect(listSyntheticBacktests).toHaveBeenCalledWith("p-1");
+    expect(panel.get("[data-testid='backtest-cases']").text()).toBe("99");
+
+    await panel.get("[data-testid='backtest-horizons']").setValue("1, two");
+    await panel.get("[data-testid='backtest-form']").trigger("submit");
+    await flushPromises();
+    expect(runSyntheticBacktest).not.toHaveBeenCalled();
+    expect(panel.get("[data-testid='backtest-form-error']").text()).toContain("positive whole numbers");
+
+    vi.mocked(runSyntheticBacktest).mockRejectedValue(
+      new ApiError({ status: 422, code: "out_of_bounds", message: "episodes: 9000 is outside [5, 2000]" }),
+    );
+    await panel.get("[data-testid='backtest-horizons']").setValue("1");
+    await panel.get("[data-testid='backtest-form']").trigger("submit");
+    await flushPromises();
+    expect(panel.get("[data-testid='backtest-error']").text()).toContain("out_of_bounds: episodes: 9000 is outside [5, 2000]");
+  });
+
+  it("offline (?example=1) keeps the disclaimer but offers no synthetic backtest run", async () => {
+    const wrapper = await mountStep("/process/p-1?example=1");
+    const panel = wrapper.get("[data-testid='backtest-panel']");
+    expect(panel.find("[data-testid='backtest-form']").exists()).toBe(false);
+    expect(panel.get("[data-testid='backtest-demo']").text()).toContain("runs on the server");
+    expect(panel.find("[data-testid='backtest-disclaimer']").exists()).toBe(true);
+    expect(listSyntheticBacktests).not.toHaveBeenCalled();
   });
 });

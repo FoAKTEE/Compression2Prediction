@@ -10,7 +10,14 @@ import { createAppRouter } from "./index";
 
 vi.mock("../api/world", () => ({ listProjects: vi.fn(), createProject: vi.fn(), getProject: vi.fn(), getWorld: vi.fn() }));
 vi.mock("../api/report", () => ({ getReport: vi.fn(), getProjectReport: vi.fn(), listReports: vi.fn() }));
-vi.mock("../api/forecast", () => ({ listRuns: vi.fn(), getRun: vi.fn(), runForecast: vi.fn(), getRankDiagnostics: vi.fn() }));
+vi.mock("../api/forecast", () => ({
+  listRuns: vi.fn(),
+  getRun: vi.fn(),
+  runForecast: vi.fn(),
+  getRankDiagnostics: vi.fn(),
+  runSyntheticBacktest: vi.fn(),
+  listSyntheticBacktests: vi.fn(),
+}));
 vi.mock("../api/model", () => ({ listVariables: vi.fn(), getModel: vi.fn(), getMechanismGraph: vi.fn() }));
 
 const pending = () => new Promise<never>(() => {});

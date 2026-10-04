@@ -689,6 +689,137 @@ export interface RankDiagnostics {
   kernel_hashes_unchanged: boolean;
 }
 
+/**
+ * The hashed scope that every single-node certificate of one rank response
+ * covers (D23): this initial law, these interventions, this horizon, and no
+ * conditioning. A certificate says nothing outside it.
+ */
+export interface CertificateScope {
+  initial_law_hash: string;
+  interventions_hash: string;
+  horizon: number;
+  conditioning: "none";
+  scope_hash: string;
+}
+
+export type RankScenario = "baseline" | "intervention";
+
+/**
+ * Fields beyond the contract's {@link RankDiagnostics} (D22, D23). The server
+ * sends all of them; they are optional here so that an older server still
+ * renders.
+ */
+export interface RankDiagnosticsExtensions {
+  /** The run's target at its final horizon step. */
+  target_key?: VariableKey;
+  scenario?: RankScenario;
+  damping?: number;
+  residual_bound?: number;
+  iterations?: number;
+  /** Single-node certificate budget. */
+  eps_tv?: number;
+  score_artifact_hash?: string;
+  bounds_hash?: string;
+  note?: string;
+  /** Scope of every `certified_prunable` flag; `null` when the run is conditioned and nothing is certified. */
+  certificate_scope?: CertificateScope | null;
+}
+
+/** `GET /api/forecast/projects/:id/runs/:runId/rank?scenario=baseline|intervention`. */
+export interface RankDiagnosticsResponse extends RankDiagnostics, RankDiagnosticsExtensions {}
+
+// ---------------------------------------------------------------- synthetic backtest
+
+/**
+ * `POST /api/forecast/projects/:id/backtests` (D24). Bounds come from the
+ * server config: `origins` >= 1, `episodes` >= origins + 1, `seed` >= 0, and
+ * distinct positive `horizons`.
+ */
+export interface SyntheticBacktestRequest {
+  episodes: number;
+  seed: number;
+  origins: number;
+  horizons: number[];
+}
+
+/** Mean held-out code length of one model over one horizon (`null`: the whole population). */
+export interface BacktestHorizonMetric {
+  horizon: number | null;
+  count: number;
+  /** Bits per prediction, `"+inf"` when an observed outcome had probability zero. */
+  mean_nll_bits: MetricValue;
+  infinite_count: number;
+  has_infinite: boolean;
+}
+
+export interface BacktestModelSummary {
+  /** `oracle` is the true generating kernel; the others are baselines. */
+  name: string;
+  role: "oracle" | "baseline";
+  spec_hash: string | null;
+  overall: BacktestHorizonMetric;
+  by_horizon: BacktestHorizonMetric[];
+}
+
+/** The frozen gate "plain_markov vs historical_base_rate" with its declared tolerance. */
+export interface BacktestGateSummary {
+  candidate: string;
+  comparator: string;
+  tau_bits: number;
+  protocol_hash: string;
+  candidate_hash: string;
+  baseline_hash: string;
+  accepted: boolean;
+  reason: string;
+  delta_bits: MetricValue;
+  strata_deltas: { name: string; delta_bits: MetricValue }[];
+}
+
+/** A software-pipeline check on simulated data; never real-world accuracy (guide §7.2). */
+export interface SyntheticBacktestSummary {
+  schema_version: "synthetic_backtest.v1";
+  scope: "software_pipeline_validation_on_simulated_data";
+  /** Shown verbatim next to the numbers. */
+  disclaimer: string;
+  data_origin: Origin;
+  request: SyntheticBacktestRequest;
+  generator: {
+    name: string;
+    scenario_id: string;
+    parameter_origin: "hand_specified_illustration";
+    validation_status: "not_empirically_validated";
+    kernels: Record<string, unknown>;
+    crew_law: { values: string[]; probabilities: number[] };
+    initial_status: string;
+    steps_per_episode: number;
+    step_minutes: number;
+    clock_epoch: string;
+    random_stream_layout: string;
+  };
+  records: { schema_version: "transition_record.v1"; count: number; origins: Origin[]; hash: string };
+  target: { scenario_id: string; variable_id: string; values: string[] };
+  split: string;
+  horizons: number[];
+  case_count: number;
+  population_hash: string;
+  prediction_ids_hash: string;
+  outcomes_hash: string;
+  origins: { origin_id: string; cutoff: string; training_episodes: number; training_records: number; cases: number }[];
+  models: BacktestModelSummary[];
+  gate: BacktestGateSummary;
+}
+
+/** `POST .../backtests` (201) and the items of `GET .../backtests` (newest first). */
+export interface SyntheticBacktestResponse extends SyntheticBacktestSummary {
+  repo_sha: string;
+  project_id: string;
+  artifact_hash: string;
+}
+
+export interface ListBacktestsResponse {
+  backtests: SyntheticBacktestResponse[];
+}
+
 // ---------------------------------------------------------------- report
 
 export interface ProbabilityEntry {

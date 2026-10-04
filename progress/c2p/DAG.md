@@ -574,15 +574,24 @@ screenshots reviewed: step 3 (baseline vs intervention bars on a fixed 0-100% ax
 
 ### N10 — End-to-end worked example
 
-- status: `pending`
+- status: `done`
 - depends: N5, N6, N7, N11, N14 (N8 optional)
 - substages: N7.4 → N10 integration (memo test `test_incident_end_to_end`);
   guide §13 incident example through core → API → UI, plus a synthetic backtest
 - acceptance:
   - 0.25 vs 0.63 via the API and in Step 4
   - missing calibration shown as missing
-- commits:
-- verifier:
+- commits: the `feat(e2e)` end-to-end worked example commit
+- verifier (run by the orchestrator):
 
 ```text
+$ npm test
+ Test Files  81 passed (81)
+      Tests  1366 passed (1366)
+$ npx tsc -b -> exit 0; npx vue-tsc --noEmit -p frontend -> exit 0; npm run golden:check -> ok (7 files); reference/python pytest -> 55 passed
+$ bash scripts/e2e-ui.sh (worker run, E2E_SHOT_DIR=scratchpad)
+[e2e-ui] P(resolved at step 2): baseline 0.25, extra_crew 0.63
+[e2e-ui] backtest gate: plain_markov vs historical_base_rate: accepted=true
+screenshots of steps 1, 3, 4 on live server data reviewed: no example badge, no server-unavailable notice, 25% / 63%, metrics "missing"
+synthetic backtest (seed 1, 200 episodes, simulated): overall bits oracle 0.867 < plain_markov 0.990 < base rate 1.430 < smoothed persistence 1.610; persistence +inf; gate delta -0.440 at tau 0.01 accepted
 ```

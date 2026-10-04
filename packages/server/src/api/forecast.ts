@@ -2,12 +2,14 @@
  * `/api/forecast`: request validation (bounds, half-open intervention windows,
  * query kind), exact forecast execution against the latest compiled plan
  * (a published run directory plus a report), run listing,
- * project-scoped run lookups, and rank/influence diagnostics (D22).
+ * project-scoped run lookups, rank/influence diagnostics (D22), and the
+ * synthetic incident backtest with its stored history (D24).
  */
 import { isPlainObject } from "@c2p/core";
 import type { FastifyInstance } from "fastify";
 import type { Bounds } from "../config.js";
 import type { AppContext } from "../context.js";
+import { listBacktests, runBacktest, validateBacktestRequest } from "../forecast/backtest.js";
 import { repoSha } from "../forecast/repoSha.js";
 import { rankRun } from "../forecast/rank.js";
 import { executeForecast } from "../forecast/service.js";
@@ -18,10 +20,12 @@ import type {
   ForecastRequest,
   Intervention,
   InterventionKind,
+  ListBacktestsResponse,
   ListRunsResponse,
   QueryKind,
   RankDiagnosticsResponse,
   RankScenario,
+  SyntheticBacktestResponse,
 } from "../wire.js";
 import { requireProject } from "./common.js";
 import type { ProjectParams } from "./common.js";
@@ -214,6 +218,23 @@ export function registerForecastRoutes(app: FastifyInstance, ctx: AppContext): v
   // The stored response, exactly as POST returned it.
   app.get<{ Params: RunParams }>("/api/forecast/projects/:projectId/runs/:runId", async (req) =>
     requireRun(req.params.projectId, req.params.runId),
+  );
+
+  // Synthetic backtest: simulated data only, a software-pipeline check (D24).
+  app.post<{ Params: ProjectParams }>(
+    "/api/forecast/projects/:projectId/backtests",
+    async (req, reply): Promise<SyntheticBacktestResponse> => {
+      const project = requireProject(ctx, req.params.projectId);
+      const request = validateBacktestRequest(req.body, ctx.config.bounds);
+      const result = runBacktest(ctx, project, request, { repoSha: sha });
+      void reply.code(201);
+      return result;
+    },
+  );
+
+  app.get<{ Params: ProjectParams }>(
+    "/api/forecast/projects/:projectId/backtests",
+    async (req): Promise<ListBacktestsResponse> => ({ backtests: listBacktests(ctx, requireProject(ctx, req.params.projectId)) }),
   );
 
   app.get<{ Params: RunParams }>(

@@ -842,3 +842,118 @@ say so explicitly and never rewrite history.
   `checkSources` from `causal/index.ts`; `initialLawHash` already reaches
   the package root through the compress barrel. A cumulative removal-set
   endpoint can pass concrete replacement kernels.
+
+## D24 — Synthetic backtest scope and disclaimer, end-to-end strategy, certificate scope on the wire
+
+- date: 2026-10-04
+- decision:
+  - Synthetic backtest location: `packages/core/src/evaluate/synthetic.ts`, a
+    library module, not a script under `examples/`. The API route and the
+    core test call the same function, so what the UI shows is what the test
+    checks. It uses only core modules and Node built-ins, and draws no
+    `Math.random`.
+  - Scope: it validates the SOFTWARE PIPELINE on simulated data, not
+    real-world accuracy (guide §7.2). The summary carries `scope:
+    "software_pipeline_validation_on_simulated_data"`, a fixed `disclaimer`,
+    `data_origin: "simulated"`, and the generator's `parameter_origin:
+    "hand_specified_illustration"`. The Step 4 panel shows a localized
+    disclaimer above the form and the server's text under the table.
+  - Generator (`incident_chain.v1`):
+    - The guide §13 matrices: baseline for crew `normal`, extra crew for
+      crew `high`. Every episode starts `unacknowledged`.
+    - Crew capacity is drawn once per episode from the declared exogenous
+      law (1/2, 1/2).
+    - Every draw has its own `c2p.stream.v1` stream, seeded from
+      sha256(run seed, [generator, episode index], variable key, purpose).
+      An episode's trajectory therefore depends on (seed, index) only, not
+      on N.
+    - Each step is one `transition_record.v1` envelope: origin `simulated`,
+      one `run_id` per episode, `action`/`completed`, crew and status in both
+      snapshots. `availability_time` (and the deterministic
+      `processing_time`) is the end of the round on a synthetic clock;
+      `valid_time` is null.
+    - The records are decoded back strictly into backtest episodes. The
+      category is `crew_<value>`, an exogenous covariate present from t = 0.
+  - Layout: `origins + 1` waves, spaced so that each wave finishes before the
+    next cutoff. Origin j holds out wave j, with its cutoff two hours after
+    the wave starts, so the anchors are t = 0, 1, 2. Training sees the earlier
+    waves; wave 0 only trains and is the gate's development set. Requires
+    `episodes >= origins + 1`.
+  - Models, scored by `rollingOriginBacktest` in bits by horizon:
+    - the true generating kernel (`oracle`, reads the crew from the
+      category);
+    - `plainMarkov` and `historicalBaseRate` (uniform Dirichlet, strength 1);
+    - `persistence`;
+    - `smoothedPersistence` (alpha 1).
+  - Frozen gate: "plain_markov vs historical_base_rate". τ = 0.01 bits per
+    prediction, one stratum per horizon. τ, the strata, and the comparator
+    are module constants, fixed before any data are generated.
+  - Test claims: deterministic for a fixed seed; oracle ≤ plainMarkov ≤ base
+    rate within 0.02 bits, by horizon and overall (N = 1200); persistence is
+    `+inf` exactly on the cases whose state changed. "Excess shrinks with
+    more episodes" is checked on the realized excess and on the expected
+    excess given each anchor (mean KL of the oracle predictive against
+    plainMarkov), from N = 12 to N = 1200. plainMarkov ignores crew capacity,
+    so its excess falls toward a positive floor, about 0.09 bits here, not
+    toward zero.
+  - Route: `POST /api/forecast/projects/:id/backtests` with exactly
+    `{episodes, seed, origins, horizons}`. Bounds come from config:
+    `C2P_MAX_BACKTEST_EPISODES` (2000), `C2P_MAX_BACKTEST_ORIGINS` (20), and
+    `C2P_MAX_BACKTEST_HORIZON` (24). Violations are 422 `out_of_bounds` or
+    `invalid_request`. The 201 body is the summary plus `repo_sha`,
+    `project_id`, and `artifact_hash`. Each model has overall and
+    per-horizon `mean_nll_bits` via `toWireMetric`, `has_infinite`, and
+    `infinite_count`; the body also has the population hashes and the gate
+    result (an undefined delta is `"missing"`). The summary is stored as an
+    immutable `synthetic_backtest` artifact: envelope origin `simulated`,
+    namespace the project. Equal requests at one repo SHA give the same
+    artifact. `GET .../backtests` lists the stored ones, newest first (at
+    most 20), so Step 4 can show the latest after a reload. The generator
+    does not read the project's model.
+  - End-to-end strategy:
+    - `packages/server/test/e2e.incident.test.ts` drives one `buildApp` on a
+      temp data dir through `app.inject` only: upload, extraction (an
+      injected fake-fetch extractor; the task is polled over
+      `GET /api/tasks/:id`), example import, compile, both forecasts,
+      reports, rank, listings, the backtest route, and a world change. The
+      data dir is only read, to check that run directories never change.
+    - `scripts/e2e-ui.sh` builds everything and runs the built server and
+      `vite preview`. It drives the API with curl and takes headless
+      screenshots of steps 1, 3, and 4 (plus a full-height step 4 that shows
+      the backtest panel).
+    - `ProcessView` now honors `?step=N` on a server project once the loaded
+      project record completes steps 1..N−1. Otherwise the gating holds.
+  - Certificate scope on the wire: `wire.ts` defines `CertificateScope`
+    `{initial_law_hash, interventions_hash, horizon, conditioning,
+    scope_hash}`, and `RankDiagnosticsResponse.certificate_scope` is
+    `CertificateScope | null`. `RankResponse` in `forecast/rank.ts` is now
+    that type. The frontend contract adds the same shape and
+    `RankDiagnosticsResponse`, whose D22/D23 extension fields are optional
+    there (as with `ReportExtensions`), so an older server still renders.
+    The Step 5 rank panel shows the scope hash, horizon, and conditioning.
+    Every certified-prunable row repeats the scope hash and conditioning.
+- why: guide §7.2 says synthetic trajectories test software but validate
+  nothing about reality, so the scope has to travel with every number. A known
+  generator gives exact checks of the pipeline: the oracle bound, baseline
+  ordering, visible `+inf`, origin separation (invariant 8), and counter-based
+  determinism (invariant 11). Realized bits carry outcome noise, so the
+  shrinkage claim is also checked on the expected excess, which has none. An
+  HTTP-only e2e test exercises the same contract the UI uses. The certificate
+  flags mean nothing without their scope (D23), so the scope must reach the
+  UI next to the flags.
+- alternatives:
+  - A script in `examples/incident/` (rejected: the route would duplicate it,
+    and the test would not cover what the server runs).
+  - An oracle that marginalizes the crew from the status history (rejected:
+    more code and no clearer check; the oracle is the generating kernel as
+    declared).
+  - Comparing realized excess alone across N (rejected: at small N, outcome
+    noise flips its sign for some seeds).
+  - Reading the generator kernels from the project's model (deferred: it
+    needs a generator over arbitrary compiled plans; the route is labeled as
+    the incident chain).
+  - Required rank extension fields in the frontend contract (rejected: the
+    frontend keeps server extensions optional, as for reports).
+- next: a generator over any compiled plan with simulator-fitted kernels; a
+  backtest on observed transitions (never pooled with simulated ones) that
+  can fill the report's NLL/Brier/calibration instead of `"missing"`.

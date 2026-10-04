@@ -1,5 +1,14 @@
 import { apiClient, seg } from "./client";
-import type { ForecastRequest, ForecastResult, ForecastRunSummary, ListRunsResponse, RankDiagnostics } from "./types";
+import type {
+  ForecastRequest,
+  ForecastResult,
+  ForecastRunSummary,
+  ListBacktestsResponse,
+  ListRunsResponse,
+  RankDiagnosticsResponse,
+  SyntheticBacktestRequest,
+  SyntheticBacktestResponse,
+} from "./types";
 
 /**
  * `POST /api/forecast/projects/:projectId/forecasts` runs a forecast against
@@ -26,10 +35,31 @@ export async function getRun(projectId: string, runId: string): Promise<Forecast
   return data;
 }
 
-/** `GET /api/forecast/projects/:projectId/runs/:runId/rank` (501 until ranking diagnostics are enabled). */
-export async function getRankDiagnostics(projectId: string, runId: string): Promise<RankDiagnostics> {
-  const { data } = await apiClient.get<RankDiagnostics>(
+/**
+ * `GET /api/forecast/projects/:projectId/runs/:runId/rank` (501 on a server
+ * without ranking diagnostics). Certified-prunable flags hold only within the
+ * response's `certificate_scope`.
+ */
+export async function getRankDiagnostics(projectId: string, runId: string): Promise<RankDiagnosticsResponse> {
+  const { data } = await apiClient.get<RankDiagnosticsResponse>(
     `/forecast/projects/${seg(projectId)}/runs/${seg(runId)}/rank`,
   );
   return data;
+}
+
+/**
+ * `POST /api/forecast/projects/:projectId/backtests`: a synthetic backtest of
+ * the guide §13 incident chain on simulated data (201). Rejects with 422
+ * `out_of_bounds` or `invalid_request`. The result validates the software
+ * pipeline, not real-world accuracy.
+ */
+export async function runSyntheticBacktest(projectId: string, request: SyntheticBacktestRequest): Promise<SyntheticBacktestResponse> {
+  const { data } = await apiClient.post<SyntheticBacktestResponse>(`/forecast/projects/${seg(projectId)}/backtests`, request);
+  return data;
+}
+
+/** `GET /api/forecast/projects/:projectId/backtests`: stored synthetic backtests, newest first. */
+export async function listSyntheticBacktests(projectId: string): Promise<SyntheticBacktestResponse[]> {
+  const { data } = await apiClient.get<ListBacktestsResponse>(`/forecast/projects/${seg(projectId)}/backtests`);
+  return data.backtests;
 }

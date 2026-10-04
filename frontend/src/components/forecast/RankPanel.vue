@@ -3,22 +3,26 @@ import { computed, ref, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { normalizeError } from "../../api/client";
 import { getRankDiagnostics } from "../../api/forecast";
-import type { RankDiagnostics } from "../../api/types";
+import type { RankDiagnosticsResponse } from "../../api/types";
 import { errorNotice } from "../../composables/errorNotice";
 import { formatMetric } from "../../composables/metric";
 import StateNotice from "../StateNotice.vue";
+import { shortHash } from "./format";
 
 /**
- * Rank and influence diagnostics of a run. The server answers 501 until
- * ranking diagnostics are enabled, which reads as a plain notice. Ranking
- * never changes a kernel; the server says whether the hashes stayed the same.
+ * Rank and influence diagnostics of a run. A server without ranking
+ * diagnostics answers 501, which reads as a plain notice. Ranking never
+ * changes a kernel; the server says whether the hashes stayed the same. A
+ * certified-prunable flag holds only within the response's certificate scope
+ * (initial law, interventions, horizon, no conditioning), so its scope hash
+ * and conditioning are shown next to every certified entry.
  */
 const props = defineProps<{ projectId: string | null; runId: string | null; demo: boolean }>();
 const { t } = useI18n();
 
 type State = "idle" | "loading" | "disabled" | "ready" | "error";
 const state = ref<State>("idle");
-const diagnostics = shallowRef<RankDiagnostics | null>(null);
+const diagnostics = shallowRef<RankDiagnosticsResponse | null>(null);
 const failure = ref<unknown>(null);
 
 async function load(projectId: string, runId: string): Promise<void> {
@@ -54,6 +58,7 @@ watch(
 );
 
 const notice = computed(() => (failure.value === null ? null : errorNotice(failure.value, t)));
+const scope = computed(() => diagnostics.value?.certificate_scope ?? null);
 </script>
 
 <template>
@@ -96,6 +101,13 @@ const notice = computed(() => (failure.value === null ? null : errorNotice(failu
             {{ diagnostics.kernel_hashes_unchanged ? t("step5.rank.unchanged") : t("step5.rank.changed") }}
           </dd>
         </div>
+        <div>
+          <dt>{{ t("step5.rank.scope") }}</dt>
+          <dd v-if="scope" class="mono" data-testid="rank-scope" :title="scope.scope_hash">
+            {{ t("step5.rank.scopeValue", { hash: shortHash(scope.scope_hash), horizon: scope.horizon, conditioning: scope.conditioning }) }}
+          </dd>
+          <dd v-else data-testid="rank-scope">{{ t("step5.rank.noScope") }}</dd>
+        </div>
       </dl>
       <div class="table-scroll">
         <table class="data-table" data-testid="rank-table">
@@ -114,7 +126,13 @@ const notice = computed(() => (failure.value === null ? null : errorNotice(failu
               <td class="mono">{{ entry.node_kind }}</td>
               <td class="mono">{{ formatMetric(entry.score, t).text }}</td>
               <td class="mono">{{ entry.influence_bound === null ? t("step5.rank.sampled") : formatMetric(entry.influence_bound, t).text }}</td>
-              <td>{{ entry.certified_prunable ? t("graph.detail.yes") : t("graph.detail.no") }}</td>
+              <td data-testid="rank-prunable">
+                {{ entry.certified_prunable ? t("graph.detail.yes") : t("graph.detail.no") }}
+                <span v-if="entry.certified_prunable && scope" class="rank__scope mono" :title="scope.scope_hash">
+                  <span data-testid="rank-scope-hash">{{ t("step5.rank.scopeHash", { hash: shortHash(scope.scope_hash) }) }}</span>
+                  <span data-testid="rank-scope-conditioning">{{ t("step5.rank.conditioning", { conditioning: scope.conditioning }) }}</span>
+                </span>
+              </td>
             </tr>
           </tbody>
         </table>
@@ -128,5 +146,11 @@ const notice = computed(() => (failure.value === null ? null : errorNotice(failu
   display: grid;
   gap: var(--c2p-space-3);
   min-width: 0;
+}
+
+.rank__scope {
+  display: grid;
+  color: var(--c2p-text-muted);
+  font-size: var(--c2p-text-xs);
 }
 </style>

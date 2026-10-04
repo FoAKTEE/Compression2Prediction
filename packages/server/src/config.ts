@@ -1,4 +1,4 @@
-/** Server configuration: data root, examples directory, upload limits, request and compile bounds, rank settings. */
+/** Server configuration: data root, examples directory, upload limits, request, compile, and backtest bounds, rank settings. */
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -29,6 +29,10 @@ export interface Bounds {
   readonly maxContexts: number;
   readonly maxFactorEntries: number;
   readonly maxPlanNodes: number;
+  /** Synthetic backtest (`POST .../backtests`): generated episodes, rolling origins, and largest horizon. */
+  readonly maxBacktestEpisodes: number;
+  readonly maxBacktestOrigins: number;
+  readonly maxBacktestHorizon: number;
 }
 
 /** Rank/influence diagnostics (memo §3.2, §3.3). */
@@ -64,6 +68,9 @@ export const DEFAULT_BOUNDS: Bounds = Object.freeze({
   maxContexts: 65_536,
   maxFactorEntries: 1_048_576,
   maxPlanNodes: 100_000,
+  maxBacktestEpisodes: 2000,
+  maxBacktestOrigins: 20,
+  maxBacktestHorizon: 24,
 });
 
 export const DEFAULT_RANK: RankConfig = Object.freeze({
@@ -94,6 +101,9 @@ const BOUNDS_ENV = {
   C2P_MAX_CONTEXTS: "maxContexts",
   C2P_MAX_FACTOR_ENTRIES: "maxFactorEntries",
   C2P_MAX_PLAN_NODES: "maxPlanNodes",
+  C2P_MAX_BACKTEST_EPISODES: "maxBacktestEpisodes",
+  C2P_MAX_BACKTEST_ORIGINS: "maxBacktestOrigins",
+  C2P_MAX_BACKTEST_HORIZON: "maxBacktestHorizon",
 } as const;
 const RANK_ENV = {
   C2P_RANK_MAX_ITER: "maxIterations",
