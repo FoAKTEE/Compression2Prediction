@@ -1,0 +1,124 @@
+{
+  "schema_version": "model_import.v1",
+  "registry": {
+    "version": "incident_variables.v1",
+    "variables": [
+      {
+        "variable_id": "incident_status",
+        "domain_by_kind": {
+          "Event": { "name": "IncidentStatus", "values": ["unacknowledged", "acknowledged", "resolved"] }
+        },
+        "units": "status",
+        "missingness": "reject",
+        "ownership": "endogenous",
+        "observation_ref": null
+      },
+      {
+        "variable_id": "crew_capacity",
+        "domain_by_kind": {
+          "Resource": { "name": "CrewCapacity", "values": ["normal", "high"] }
+        },
+        "units": "capacity_level",
+        "missingness": "reject",
+        "ownership": "exogenous",
+        "observation_ref": null
+      },
+      {
+        "variable_id": "supply_status",
+        "domain_by_kind": {
+          "Location": { "name": "SupplyStatus", "values": ["available"] }
+        },
+        "units": "status",
+        "missingness": "reject",
+        "ownership": "exogenous",
+        "observation_ref": null
+      }
+    ]
+  },
+  "templates": [
+    {
+      "template_id": "incident_progress",
+      "mechanism": {
+        "schema_version": "mechanism.v1",
+        "mechanism_id": "mechanism_incident_progress",
+        "family": "incident_progress",
+        "inputs": [
+          { "port": "status", "variable": "incident_status", "time_offset": 0 },
+          { "port": "crew", "variable": "crew_capacity", "time_offset": 0 },
+          { "port": "supplies", "variable": "supply_status", "time_offset": 0 }
+        ],
+        "outputs": [
+          { "port": "next_status", "variable": "incident_status", "time_offset": 1 }
+        ],
+        "kernel_ref": "kernel_incident_progress.v1",
+        "enabled": true,
+        "causal_basis": "explicit_model_assumption",
+        "evidence_ids": [],
+        "parameter_origin": "hand_specified_illustration",
+        "validation_status": "not_empirically_validated"
+      },
+      "kind": "Event",
+      "role": "RepairedBy",
+      "bindings": [
+        { "port": "status", "selector": "self", "required_role": null },
+        { "port": "crew", "selector": "scope", "required_role": null },
+        { "port": "supplies", "selector": "scope", "required_role": "SuppliedFrom" },
+        { "port": "next_status", "selector": "self", "required_role": null }
+      ],
+      "regime": "baseline_operations",
+      "data_origin_partition": "hand_specified"
+    }
+  ],
+  "kernels": [
+    {
+      "kernel_ref": "kernel_incident_progress.v1",
+      "payload": {
+        "schema_version": "kernel.v1",
+        "matrix_convention": "rows=input",
+        "source": {
+          "name": "((IncidentStatus*CrewCapacity)*SupplyStatus)",
+          "values": [
+            "[\"[\\\"unacknowledged\\\",\\\"normal\\\"]\",\"available\"]",
+            "[\"[\\\"unacknowledged\\\",\\\"high\\\"]\",\"available\"]",
+            "[\"[\\\"acknowledged\\\",\\\"normal\\\"]\",\"available\"]",
+            "[\"[\\\"acknowledged\\\",\\\"high\\\"]\",\"available\"]",
+            "[\"[\\\"resolved\\\",\\\"normal\\\"]\",\"available\"]",
+            "[\"[\\\"resolved\\\",\\\"high\\\"]\",\"available\"]"
+          ]
+        },
+        "target": { "name": "IncidentStatus", "values": ["unacknowledged", "acknowledged", "resolved"] },
+        "rows": [
+          [0.6, 0.3, 0.1],
+          [0.3, 0.4, 0.3],
+          [0, 0.7, 0.3],
+          [0, 0.4, 0.6],
+          [0, 0, 1],
+          [0, 0, 1]
+        ],
+        "parameter_origin": "hand_specified_illustration",
+        "fitting_method": "hand_specified",
+        "training_cutoff": null,
+        "extra": {
+          "validation_status": "not_empirically_validated",
+          "note": "Guide §13 illustrative matrices: crew=normal rows are the baseline matrix, crew=high rows are the extra-crew matrix. Not estimates."
+        }
+      }
+    }
+  ],
+  "horizon_steps": 2,
+  "scenario_id": "baseline",
+  "sources": [
+    ["baseline", "incident_status", "ent_incident_001", 0],
+    ["baseline", "crew_capacity", "ent_repair_crew", 0],
+    ["baseline", "crew_capacity", "ent_repair_crew", 1],
+    ["baseline", "supply_status", "ent_east_depot", 0],
+    ["baseline", "supply_status", "ent_east_depot", 1]
+  ],
+  "initial": [
+    { "key": ["baseline", "incident_status", "ent_incident_001", 0], "distribution": [1, 0, 0] },
+    { "key": ["baseline", "crew_capacity", "ent_repair_crew", 0], "distribution": [1, 0] },
+    { "key": ["baseline", "crew_capacity", "ent_repair_crew", 1], "distribution": [1, 0] },
+    { "key": ["baseline", "supply_status", "ent_east_depot", 0], "distribution": [1] },
+    { "key": ["baseline", "supply_status", "ent_east_depot", 1], "distribution": [1] }
+  ]
+}

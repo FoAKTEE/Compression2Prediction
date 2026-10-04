@@ -59,7 +59,7 @@ describe("error body shape", () => {
         422,
         "unsupported_counterfactual",
       ],
-      [app.inject({ method: "POST", url: `/api/model/projects/${id}/compile`, payload: {} }), 501, "not_implemented"],
+      [app.inject({ method: "POST", url: `/api/model/projects/${id}/compile`, payload: {} }), 404, "model_not_found"],
       [app.inject({ method: "POST", url: `/api/world/projects/${id}/extraction` }), 501, "not_implemented"],
       [app.inject({ method: "GET", url: "/api/report/reports/rep_none" }), 404, "report_not_found"],
     ];

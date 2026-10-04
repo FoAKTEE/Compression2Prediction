@@ -14,6 +14,7 @@ import { UploadStore } from "./repos/uploads.js";
 import { ArtifactStore, resolveInside } from "./store/index.js";
 import { TaskRunner } from "./tasks/runner.js";
 import type { RunnerOptions } from "./tasks/runner.js";
+import { ModelService } from "./model/service.js";
 import { WorldService } from "./world/service.js";
 
 export interface AppContext {
@@ -26,6 +27,7 @@ export interface AppContext {
   readonly runs: RunRepo;
   readonly reports: ReportRepo;
   readonly worlds: WorldService;
+  readonly models: ModelService;
   readonly runner: TaskRunner;
   /** What startup recovery changed. */
   readonly recovered: { readonly tasks: number; readonly projects: number };
@@ -55,6 +57,7 @@ export function openContext(config: ServerConfig, runnerOptions: RunnerOptions =
     runs: new RunRepo(db),
     reports: new ReportRepo(db),
     worlds: new WorldService(artifacts),
+    models: new ModelService(artifacts),
     runner: new TaskRunner(tasks, runnerOptions),
     recovered,
   };

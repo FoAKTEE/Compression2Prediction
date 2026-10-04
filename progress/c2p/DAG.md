@@ -429,36 +429,18 @@ pending: N7.4 rolling-origin backtest (needs N5)
   - tasks survive a restart
   - the report endpoint returns `missing` (not a number) for absent calibration
   - no network
-- commits: skeleton: the `feat(api)` route-groups commit; compile/forecast/rank/extraction wiring pending
+- commits: skeleton b320c11; phase b: the `feat(api)` model import/compile/examples commit; forecast/rank/extraction wiring pending
 - verifier (run by the orchestrator):
 
 ```text
-$ npx vitest run --project server
- ✓ |server| packages/server/test/store.runs.test.ts (5 tests) 136ms
- ✓ |server| packages/server/test/store.artifacts.test.ts (5 tests) 230ms
- ✓ |server| packages/server/test/health.test.ts (1 test) 454ms
-   ✓ GET /api/health (1)
-     ✓ reports ok and the core version 452ms
- ✓ |server| packages/server/test/api.report.test.ts (6 tests) 581ms
-   ✓ GET /api/report/reports/:reportId (2)
-     ✓ is 404 until a report exists, then returns "missing" (not a number) for absent calibration 535ms
- ✓ |server| packages/server/test/api.errors.test.ts (4 tests) 556ms
-   ✓ error body shape (3)
-     ✓ is exactly {error: {code, message}} for every status the API produces 520ms
- ✓ |server| packages/server/test/api.tasks.test.ts (5 tests) 690ms
-   ✓ tasks (5)
-     ✓ serves a persisted task in the contract shape 462ms
- ✓ |server| packages/server/test/api.forecast.test.ts (9 tests) 1112ms
-   ✓ forecast request validation (6)
-     ✓ a valid request passes validation and answers 501 until inference is wired 557ms
- ✓ |server| packages/server/test/api.world.test.ts (14 tests) 1457ms
-   ✓ projects (5)
-     ✓ create / list / get round trip with a multipart upload 523ms
- Test Files  8 passed (8)
-      Tests  49 passed (49)
+$ npx vitest run --project server   (87 passed incl. model/examples suites)
+ ✓ |server| packages/server/test/api.examples.test.ts (5 tests) 989ms
+ ✓ |server| packages/server/test/api.model.test.ts (11 tests) 2387ms
+ Test Files  13 passed (13)
+      Tests  102 passed (102)
 $ npx tsc -b -> exit 0
-smoke (worker, built server PORT=5098): create project 201; import six-entity world -> world_entity_count 6, agent_candidate_count 2; 11 MB file 413; .exe 422; ..%2Fx 400; counterfactual 422
-pending: wire compile (N4), forecasts (N5), rank (N6), extraction (N8), backtest metrics (N7.4)
+smoke (worker, built server PORT=5097): incident example world 6/1 counts -> PUT model {variables 3, templates 1, kernels 1, sources 5} -> compile ok:true -> mechanism-graph 2 bindings, inputs status,crew,supplies, one output each
+pending: forecasts (N5 wiring), rank (N6), extraction registration (N8)
 ```
 
 ### N12 — Frontend scaffold

@@ -1,4 +1,4 @@
-/** Server configuration: data root, upload limits, request bounds. */
+/** Server configuration: data root, examples directory, upload limits, request and compile bounds. */
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -6,6 +6,8 @@ import { fileURLToPath } from "node:url";
 export const REPO_ROOT = fileURLToPath(new URL("../../../", import.meta.url));
 /** Default data root; `data/` is gitignored. */
 export const DEFAULT_DATA_DIR = path.join(REPO_ROOT, "data");
+/** Bundled examples (`examples/<name>/{example,world,model}.json`), validated at startup. */
+export const DEFAULT_EXAMPLES_DIR = path.join(REPO_ROOT, "examples");
 
 const MiB = 1024 * 1024;
 
@@ -21,12 +23,17 @@ export interface Bounds {
   readonly maxHorizonSteps: number;
   readonly maxParticles: number;
   readonly maxInterventions: number;
-  /** Body limit for JSON routes (world import). */
+  /** Body limit for JSON routes (world and model import). */
   readonly maxJsonBodyBytes: number;
+  /** Compile budget (core `Budget`); `maxParticles` is shared. */
+  readonly maxContexts: number;
+  readonly maxFactorEntries: number;
+  readonly maxPlanNodes: number;
 }
 
 export interface ServerConfig {
   readonly dataDir: string;
+  readonly examplesDir: string;
   readonly upload: UploadLimits;
   readonly bounds: Bounds;
 }
@@ -43,10 +50,14 @@ export const DEFAULT_BOUNDS: Bounds = Object.freeze({
   maxParticles: 100_000,
   maxInterventions: 64,
   maxJsonBodyBytes: 16 * MiB,
+  maxContexts: 65_536,
+  maxFactorEntries: 1_048_576,
+  maxPlanNodes: 100_000,
 });
 
 export interface ConfigOverrides {
   readonly dataDir?: string;
+  readonly examplesDir?: string;
   readonly upload?: Partial<UploadLimits>;
   readonly bounds?: Partial<Bounds>;
 }
@@ -62,6 +73,9 @@ const BOUNDS_ENV = {
   C2P_MAX_PARTICLES: "maxParticles",
   C2P_MAX_INTERVENTIONS: "maxInterventions",
   C2P_MAX_JSON_BODY_BYTES: "maxJsonBodyBytes",
+  C2P_MAX_CONTEXTS: "maxContexts",
+  C2P_MAX_FACTOR_ENTRIES: "maxFactorEntries",
+  C2P_MAX_PLAN_NODES: "maxPlanNodes",
 } as const;
 
 function positiveInt(value: unknown, name: string): number {
@@ -94,14 +108,17 @@ function extensions(list: readonly string[]): readonly string[] {
 export function loadConfig(env: NodeJS.ProcessEnv = process.env, overrides: ConfigOverrides = {}): ServerConfig {
   const envDir = env.C2P_DATA_DIR;
   const dataDir = path.resolve(overrides.dataDir ?? (envDir !== undefined && envDir !== "" ? envDir : DEFAULT_DATA_DIR));
+  const envExamples = env.C2P_EXAMPLES_DIR;
+  const examplesDir = path.resolve(
+    overrides.examplesDir ?? (envExamples !== undefined && envExamples !== "" ? envExamples : DEFAULT_EXAMPLES_DIR),
+  );
   const upload = { ...DEFAULT_UPLOAD, ...fromEnv(env, UPLOAD_ENV), ...overrides.upload };
   const bounds = { ...DEFAULT_BOUNDS, ...fromEnv(env, BOUNDS_ENV), ...overrides.bounds };
   for (const key of ["maxFiles", "maxFileBytes", "maxTotalBytes"] as const) positiveInt(upload[key], key);
-  for (const key of ["maxHorizonSteps", "maxParticles", "maxInterventions", "maxJsonBodyBytes"] as const) {
-    positiveInt(bounds[key], key);
-  }
+  for (const key of Object.keys(DEFAULT_BOUNDS) as (keyof Bounds)[]) positiveInt(bounds[key], key);
   return Object.freeze({
     dataDir,
+    examplesDir,
     upload: Object.freeze({ ...upload, allowedExtensions: extensions(upload.allowedExtensions) }),
     bounds: Object.freeze(bounds),
   });

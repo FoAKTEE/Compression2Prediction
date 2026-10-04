@@ -312,3 +312,89 @@ say so explicitly and never rewrite history.
   building the API server skeleton (N11).
 - next: apply in the frontend contract with N14 and in the report serializer
   with N7.4/N10.
+
+## D18 — Model import format, plan artifacts, bundled examples, compile diagnostics as 200 + ok:false
+
+- date: 2026-10-04
+- decision:
+  - Model import: `PUT /api/model/projects/:id/model` takes `model_import.v1`
+    `{registry, templates, kernels, horizon_steps, scenario_id, sources,
+    initial}` plus an optional `expected_model_version` (compare-and-set,
+    409 `version_conflict`). Every object is strict. Specs go through
+    `decodeMechanismSpec`, templates through `TemplateSpec`, variables
+    through `VariableDef`/`VariableRegistry`, and kernels through
+    `kernelFromPayload` (re-encoded with `kernelToPayload`).
+    `domain_by_kind` is an object `{Kind: {name, values}}`. Import also
+    rejects (422 `invalid_model`) these cases:
+    - a port variable missing from the registry;
+    - duplicate template ids or kernel refs;
+    - one `mechanism_id` declared with two different specs;
+    - a mechanism whose `parameter_origin` differs from its kernel's;
+    - a distribution outside [0, 1] or not summing to one (core tolerance);
+    - a source without a prior, or a prior without a source;
+    - a source or prior in another scenario, or naming an entity that is not
+      in the world;
+    - a prior whose size differs from the domain of the entity's kind;
+    - a `scenario_id` that differs from the world's.
+    Checks the compiler owns are left to compile: port order against the
+    kernel, missing kernels, writers, cycles, budgets.
+  - Storage: the model is an immutable `model` artifact in the project's
+    namespace, `{schema_version: "model.v1", world_version, model:
+    <canonical import>}`, with envelope origin `assumed`. Its content hash is
+    the `model_version`. Validation uses the current world, so the version
+    includes `world_version`; a new world already clears the model (D16).
+    The provisional `ModelPayload` is gone.
+  - Compile: `POST .../compile` runs core `unroll` over the stored world's
+    entities and roles, then `compilePlan` with a `Budget` from config.
+    The new bounds `maxContexts`, `maxFactorEntries`, and `maxPlanNodes`
+    have env overrides; `maxParticles` is shared with forecasts.
+    `horizon_steps` and `mechanism_ids` in the request override the model's
+    (an unknown id is 422 `invalid_request`).
+  - Success stores an immutable `plan` artifact (`plan.v1`):
+    - `model_version`, `world_version`, `graph_hash`, and `model_hash`;
+    - nodes in topological order, each with its template, family key,
+      anchor tick, and named input/output keys;
+    - every key the plan touches, with its domain and an origin.
+      Written keys take the origin of their kernel's `parameter_origin`
+      (`hand_specified*` → `assumed`, `simulator_fitted` → `simulated`,
+      `empirically_fitted` → `observed`); unwritten keys are `assumed`.
+    A `model_plans` row in `state.sqlite3` points (project, model_version)
+    at the latest plan. `mechanism-graph` serves bindings from that plan.
+    Before the first compile it serves the specs with empty `variables`
+    and `bindings`.
+  - Diagnostics: a core `ValueError` from `unroll` or `compilePlan` is a 200
+    `{ok: false, model_version, diagnostics: [{severity: "error", code:
+    "compile_error", message, mechanism_id, variable_id, port}]}`.
+    `mechanism_id`, `variable_id`, and `port` are parsed from the message
+    (a template id maps to its mechanism; a port index maps to its name).
+    For a kernel source/target mismatch, which the core message reports as
+    Space names, the server derives the port: the first input whose declared
+    Space differs from the kernel's source factor, or the output port. It
+    appends that port to the message. An empty plan is `ok: true` with one
+    `warning` `empty_plan`. HTTP errors remain for the request itself:
+    404 `model_not_found`, 422 `invalid_request` / `out_of_bounds`.
+  - Examples: `examples/<name>/{example.json, world.json, model.json}` at
+    the repo root (`C2P_EXAMPLES_DIR` / `config.examplesDir` override).
+    `example.json` is `{title, description}`, and the name is the directory.
+    At startup, before any state is opened, every example must decode as a
+    world, decode as a model for that world, and compile. Otherwise
+    `buildApp` throws an `ExampleError` that names the example. A missing
+    directory means no examples. `GET /api/examples` lists them, and
+    `GET /api/examples/:name` returns the stored JSON as-is (404
+    `example_not_found`). `examples/incident` is the guide §13 scenario.
+    Its kernel rows are the baseline matrix for crew=normal and the
+    extra-crew matrix for crew=high (`hand_specified_illustration`,
+    `not_empirically_validated`).
+- why: compile failures are expected results of model review, not failed
+  requests, and the UI shows them as diagnostics next to the model. Storing
+  the plan separately from the model keeps the model version independent
+  of request-time options (horizon, mechanism selection). Content-addressed
+  plans make recompiles idempotent. Validating examples at startup keeps a
+  broken example from reaching a user.
+- alternatives: 422 for compile errors (rejected: the frontend needs the
+  diagnostic list and the model version together); storing the plan inside
+  the model artifact (rejected: one model compiles under several horizons);
+  a `plan_version` column on `projects` (rejected: needs a schema migration
+  of existing state files; a new table does not); leaving the port null for
+  kernel order mismatches (rejected: a swapped declaration is the common
+  error, and the port is what the user must fix).

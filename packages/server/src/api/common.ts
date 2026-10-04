@@ -2,6 +2,7 @@
 import { ValueError } from "@c2p/core";
 import type { AppContext } from "../context.js";
 import { projectIdParam } from "../ids.js";
+import type { StoredModel } from "../model/service.js";
 import type { ProjectState } from "../repos/projects.js";
 import type { WorldBundle } from "../world/codec.js";
 import { HttpError, notFound } from "./errors.js";
@@ -19,7 +20,7 @@ export function requireProject(ctx: AppContext, raw: unknown): ProjectState {
 }
 
 /** A stored artifact that fails verification is a server-side integrity failure, not bad input. */
-function integrity<T>(fn: () => T): T {
+export function integrity<T>(fn: () => T): T {
   try {
     return fn();
   } catch (err) {
@@ -39,7 +40,7 @@ export function requireWorld(ctx: AppContext, project: ProjectState): WorldBundl
   return world;
 }
 
-export function loadModel(ctx: AppContext, project: ProjectState): ReturnType<AppContext["worlds"]["loadModel"]> | null {
+export function loadModel(ctx: AppContext, project: ProjectState): StoredModel | null {
   const version = project.model_version;
-  return version === null ? null : integrity(() => ctx.worlds.loadModel(project.project_id, version));
+  return version === null ? null : integrity(() => ctx.models.load(project.project_id, version));
 }

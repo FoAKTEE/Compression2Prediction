@@ -27,6 +27,17 @@ export interface ProjectState extends Project {
 
 export type CasResult = { readonly ok: true; readonly project: ProjectState } | { readonly ok: false; readonly current: string | null };
 
+export type ModelCasResult =
+  | { readonly ok: true; readonly project: ProjectState }
+  | {
+      readonly ok: false;
+      readonly reason: "missing" | "world_changed" | "lifecycle" | "version_conflict";
+      readonly current: string | null;
+    };
+
+/** Statuses from which a model may be imported. */
+export const MODEL_WRITABLE: readonly ProjectStatus[] = Object.freeze(["world_ready", "model_ready"]);
+
 type Row = Record<string, unknown>;
 
 function summary(row: Row): ProjectSummary {
@@ -132,14 +143,46 @@ export class ProjectRepo {
     });
   }
 
-  /** Record a compiled model version (for the compiler, N4); needs a world. */
-  setModel(projectId: string, version: string): boolean {
-    const res = this.db
-      .prepare(
-        "UPDATE projects SET model_version = ?, status = 'model_ready', updated_at = ? WHERE project_id = ? AND world_version IS NOT NULL AND status IN ('world_ready', 'model_ready')",
-      )
-      .run(version, nowIso(), projectId);
-    return Number(res.changes) === 1;
+  /**
+   * Point the project at an imported model version, which was validated
+   * against `worldVersion`. Compare-and-set on `expected` when given (`null`
+   * expects no model yet); the world must still be `worldVersion`.
+   */
+  setModel(projectId: string, version: string, worldVersion: string, expected?: string | null): ModelCasResult {
+    return transaction(this.db, () => {
+      const row = this.db.prepare("SELECT world_version, model_version, status FROM projects WHERE project_id = ?").get(projectId);
+      if (row === undefined) return { ok: false, reason: "missing", current: null };
+      const current = optStr(row.model_version);
+      if (optStr(row.world_version) !== worldVersion) return { ok: false, reason: "world_changed", current };
+      if (!MODEL_WRITABLE.includes(String(row.status) as ProjectStatus)) return { ok: false, reason: "lifecycle", current };
+      if (expected !== undefined && expected !== current) return { ok: false, reason: "version_conflict", current };
+      this.db
+        .prepare("UPDATE projects SET model_version = ?, status = 'model_ready', updated_at = ? WHERE project_id = ?")
+        .run(version, nowIso(), projectId);
+      return { ok: true, project: this.get(projectId)! };
+    });
+  }
+
+  /** Record the latest plan compiled from `modelVersion`, if the project still points at it. */
+  setPlan(projectId: string, modelVersion: string, planVersion: string): boolean {
+    return transaction(this.db, () => {
+      const row = this.db.prepare("SELECT model_version FROM projects WHERE project_id = ?").get(projectId);
+      if (row === undefined || optStr(row.model_version) !== modelVersion) return false;
+      this.db
+        .prepare(
+          "INSERT INTO model_plans (project_id, model_version, plan_version, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT (project_id, model_version) DO UPDATE SET plan_version = excluded.plan_version, updated_at = excluded.updated_at",
+        )
+        .run(projectId, modelVersion, planVersion, nowIso());
+      return true;
+    });
+  }
+
+  /** The latest plan compiled from `modelVersion`, or `null`. */
+  planVersion(projectId: string, modelVersion: string): string | null {
+    const row = this.db
+      .prepare("SELECT plan_version FROM model_plans WHERE project_id = ? AND model_version = ?")
+      .get(projectId, modelVersion);
+    return row === undefined ? null : String(row.plan_version);
   }
 
   /** A failed extraction falls back to the previous world, or `failed` if there is none. */

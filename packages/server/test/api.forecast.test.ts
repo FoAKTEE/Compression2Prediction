@@ -147,7 +147,7 @@ describe("runs are scoped to their project", () => {
 });
 
 describe("model routes", () => {
-  it("serve empty contract shapes before a model exists, eligibility from the world, compile 501", async () => {
+  it("serve empty contract shapes before a model exists, eligibility from the world, compile 404", async () => {
     const app = await makeApp();
     const id = await createProject(app);
     const get = (p: string) => app.inject({ method: "GET", url: `/api/model/projects/${id}/${p}` });
@@ -171,30 +171,8 @@ describe("model routes", () => {
 
     const compile = (payload: unknown) =>
       app.inject({ method: "POST", url: `/api/model/projects/${id}/compile`, payload: payload as object });
-    expectError(await compile({}), 501, "not_implemented");
+    expectError(await compile({}), 404, "model_not_found");
     expectError(await compile({ horizon_steps: app.c2p.config.bounds.maxHorizonSteps + 1 }), 422, "out_of_bounds");
     expectError(await compile({ kernels: [] }), 422, "invalid_request");
-  });
-
-  it("serve a stored model artifact once one is recorded for the project", async () => {
-    const app = await makeApp();
-    const id = await createProject(app);
-    await app.inject({ method: "PUT", url: `/api/world/projects/${id}/world`, payload: sixEntityWorld() });
-    const payload = {
-      registry_version: "registry.v1",
-      scenario_id: "baseline",
-      variables: [{ variable_id: "incident_status" }],
-      mechanisms: [{ mechanism_id: "m_progress" }],
-      variable_instances: [],
-      bindings: [],
-    };
-    const ref = app.c2p.artifacts.put("model", payload, { origin: "assumed", scenario_id: id, run_id: null, version: "model.v1" });
-    expect(app.c2p.projects.setModel(id, ref.content_hash)).toBe(true);
-    const vars = (await app.inject({ method: "GET", url: `/api/model/projects/${id}/variables` })).json();
-    expect(vars).toEqual({ registry_version: "registry.v1", variables: [{ variable_id: "incident_status" }] });
-    const graph = (await app.inject({ method: "GET", url: `/api/model/projects/${id}/mechanism-graph` })).json();
-    expect(graph.model_version).toBe(ref.content_hash);
-    expect(graph.mechanisms).toEqual([{ mechanism_id: "m_progress" }]);
-    expect((await app.inject({ method: "GET", url: `/api/world/projects/${id}` })).json().status).toBe("model_ready");
   });
 });

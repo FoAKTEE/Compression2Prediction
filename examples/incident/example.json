@@ -1,0 +1,4 @@
+{
+  "title": "Pump station outage (guide §13)",
+  "description": "A fictional service incident: an operator, a utility, a depot, a maintenance notice, and a repair crew. Incident status evolves under crew capacity and supplies. The two transition matrices (baseline crew, extra crew) are hand-specified illustrative assumptions, not estimates from real incident data, and are not empirically validated. One step is one hour; resolved is absorbing."
+}

@@ -1,7 +1,8 @@
 /**
  * Mutable server state in one sqlite file, `<dataDir>/state.sqlite3`:
- * projects, uploaded-file records, tasks, forecast-run and report records.
- * Immutable worlds and models live in the ArtifactStore, not here.
+ * projects, uploaded-file records, tasks, forecast-run and report records,
+ * and the latest compiled plan per model version. Immutable worlds, models,
+ * and plans live in the ArtifactStore, not here.
  */
 import fs from "node:fs";
 import { DatabaseSync } from "node:sqlite";
@@ -52,6 +53,13 @@ const SCHEMA = `
     created_at TEXT NOT NULL
   );
   CREATE INDEX IF NOT EXISTS runs_by_project ON forecast_runs (project_id);
+  CREATE TABLE IF NOT EXISTS model_plans (
+    project_id TEXT NOT NULL REFERENCES projects (project_id),
+    model_version TEXT NOT NULL,
+    plan_version TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (project_id, model_version)
+  );
   CREATE TABLE IF NOT EXISTS reports (
     report_id TEXT PRIMARY KEY,
     project_id TEXT NOT NULL REFERENCES projects (project_id),

@@ -1,8 +1,9 @@
 /**
  * Wire shapes served to the frontend (mirrors `frontend/src/api/types.ts`;
- * snake_case field names). Model shapes with no producer yet stay opaque.
+ * snake_case field names).
  */
-import type { EntityJson, Origin } from "@c2p/core";
+import type { EntityJson, MechanismSpecJson, Origin } from "@c2p/core";
+import type { KeyJson, SpaceJson, VariableDefJson } from "./model/codec.js";
 
 export type Timestamp = string;
 
@@ -137,23 +138,83 @@ export interface EligibilityResponse {
   entities: EligibilityRecord[];
 }
 
-/** `registry_version` is `null` until a registry exists (contract says `string`). */
+/** `registry_version` is `null` until a model is imported (contract says `string`). */
 export interface ListVariablesResponse {
   registry_version: string | null;
-  variables: unknown[];
+  variables: VariableDefJson[];
 }
 
 export interface ListMechanismsResponse {
-  mechanisms: unknown[];
+  mechanisms: MechanismSpecJson[];
+}
+
+export interface VariableInstance {
+  scenario_id: string;
+  variable_id: string;
+  entity_id: string;
+  time_index: number;
+  domain: SpaceJson;
+  origin: Origin;
+}
+
+export interface PortBinding {
+  port: string;
+  key: KeyJson;
+}
+
+/** One plan node; a port with `time_offset` k reads or writes `time_index + k`. */
+export interface MechanismBinding {
+  binding_id: string;
+  mechanism_id: string;
+  scenario_id: string;
+  time_index: number;
+  inputs: PortBinding[];
+  outputs: PortBinding[];
 }
 
 export interface MechanismGraphResponse {
   project_id: string;
   scenario_id: string;
   model_version: string | null;
-  variables: unknown[];
-  mechanisms: unknown[];
-  bindings: unknown[];
+  variables: VariableInstance[];
+  mechanisms: MechanismSpecJson[];
+  bindings: MechanismBinding[];
+}
+
+export type DiagnosticSeverity = "error" | "warning" | "info";
+
+export interface CompileDiagnostic {
+  severity: DiagnosticSeverity;
+  code: string;
+  message: string;
+  mechanism_id: string | null;
+  variable_id: string | null;
+  port: string | null;
+}
+
+export interface CompileModelResponse {
+  ok: boolean;
+  model_version: string | null;
+  diagnostics: CompileDiagnostic[];
+}
+
+export interface ImportModelResponse {
+  model_version: string;
+  counts: { variables: number; templates: number; kernels: number; sources: number };
+}
+
+// ---------------------------------------------------------------- examples
+
+export interface ExampleSummary {
+  name: string;
+  title: string;
+  description: string;
+}
+
+/** `world` is a `PUT .../world` body and `model` a `PUT .../model` body, as stored in the repo. */
+export interface ExampleResponse extends ExampleSummary {
+  world: Record<string, unknown>;
+  model: Record<string, unknown>;
 }
 
 // ---------------------------------------------------------------- forecast

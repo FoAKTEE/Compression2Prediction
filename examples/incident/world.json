@@ -1,0 +1,320 @@
+{
+  "scenario_id": "baseline",
+  "version": "world.v1",
+  "ontology": {
+    "version": "incident_ontology.v1",
+    "subtypes": [
+      {
+        "name": "ServiceOutage",
+        "parent": "Event"
+      },
+      {
+        "name": "RepairCrew",
+        "parent": "Resource"
+      },
+      {
+        "name": "Depot",
+        "parent": "Location"
+      },
+      {
+        "name": "Operator",
+        "parent": "Person"
+      },
+      {
+        "name": "Utility",
+        "parent": "Organization"
+      },
+      {
+        "name": "MaintenanceNotice",
+        "parent": "Artifact"
+      }
+    ],
+    "roles": [
+      {
+        "name": "RepairedBy",
+        "allowed_kinds": [
+          "Event"
+        ],
+        "scope_kinds": [
+          "Resource"
+        ]
+      },
+      {
+        "name": "SuppliedFrom",
+        "allowed_kinds": [
+          "Event"
+        ],
+        "scope_kinds": [
+          "Location"
+        ]
+      },
+      {
+        "name": "IncidentCoordinator",
+        "allowed_kinds": [
+          "Person"
+        ],
+        "scope_kinds": [
+          "Event"
+        ]
+      },
+      {
+        "name": "ResponsibleOperator",
+        "allowed_kinds": [
+          "Organization"
+        ],
+        "scope_kinds": [
+          "Event"
+        ]
+      },
+      {
+        "name": "AssignedCrew",
+        "allowed_kinds": [
+          "Resource"
+        ],
+        "scope_kinds": [
+          "Event"
+        ]
+      },
+      {
+        "name": "SupplyDepot",
+        "allowed_kinds": [
+          "Location"
+        ],
+        "scope_kinds": [
+          "Event"
+        ]
+      },
+      {
+        "name": "Employee",
+        "allowed_kinds": [
+          "Person"
+        ],
+        "scope_kinds": [
+          "Organization"
+        ]
+      },
+      {
+        "name": "Author",
+        "allowed_kinds": [
+          "Organization"
+        ],
+        "scope_kinds": [
+          "Artifact"
+        ]
+      }
+    ]
+  },
+  "entities": [
+    {
+      "schema_version": "world.v1",
+      "entity_id": "ent_incident_001",
+      "display_name": "Pump station outage",
+      "primary_kind": "Event",
+      "subtypes": [
+        "ServiceOutage"
+      ],
+      "roles": [
+        {
+          "role": "RepairedBy",
+          "scope_entity_id": "ent_repair_crew",
+          "valid_from": 0,
+          "valid_to": null,
+          "evidence_ids": []
+        },
+        {
+          "role": "SuppliedFrom",
+          "scope_entity_id": "ent_east_depot",
+          "valid_from": 0,
+          "valid_to": null,
+          "evidence_ids": []
+        }
+      ],
+      "classification_candidates": [],
+      "agent_eligible": false,
+      "agent_eligibility_basis": null,
+      "origin": "assumed",
+      "epistemic_status": "scenario_assumption",
+      "external_ids": [],
+      "evidence_ids": [],
+      "attributes": {},
+      "ontology_version": "incident_ontology.v1"
+    },
+    {
+      "schema_version": "world.v1",
+      "entity_id": "ent_repair_crew",
+      "display_name": "Repair crew",
+      "primary_kind": "Resource",
+      "subtypes": [
+        "RepairCrew"
+      ],
+      "roles": [],
+      "classification_candidates": [],
+      "agent_eligible": false,
+      "agent_eligibility_basis": null,
+      "origin": "assumed",
+      "epistemic_status": "scenario_assumption",
+      "external_ids": [],
+      "evidence_ids": [],
+      "attributes": {},
+      "ontology_version": "incident_ontology.v1"
+    },
+    {
+      "schema_version": "world.v1",
+      "entity_id": "ent_east_depot",
+      "display_name": "East depot",
+      "primary_kind": "Location",
+      "subtypes": [
+        "Depot"
+      ],
+      "roles": [],
+      "classification_candidates": [],
+      "agent_eligible": false,
+      "agent_eligibility_basis": null,
+      "origin": "assumed",
+      "epistemic_status": "scenario_assumption",
+      "external_ids": [],
+      "evidence_ids": [],
+      "attributes": {},
+      "ontology_version": "incident_ontology.v1"
+    },
+    {
+      "schema_version": "world.v1",
+      "entity_id": "ent_operator_a",
+      "display_name": "Depot operator A",
+      "primary_kind": "Person",
+      "subtypes": [
+        "Operator"
+      ],
+      "roles": [
+        {
+          "role": "IncidentCoordinator",
+          "scope_entity_id": "ent_incident_001",
+          "valid_from": null,
+          "valid_to": null,
+          "evidence_ids": []
+        },
+        {
+          "role": "Employee",
+          "scope_entity_id": "ent_east_utility",
+          "valid_from": 0,
+          "valid_to": null,
+          "evidence_ids": []
+        }
+      ],
+      "classification_candidates": [],
+      "agent_eligible": true,
+      "agent_eligibility_basis": "explicit_synthetic_scenario_selection",
+      "origin": "assumed",
+      "epistemic_status": "scenario_assumption",
+      "external_ids": [],
+      "evidence_ids": [],
+      "attributes": {},
+      "ontology_version": "incident_ontology.v1"
+    },
+    {
+      "schema_version": "world.v1",
+      "entity_id": "ent_east_utility",
+      "display_name": "East water utility",
+      "primary_kind": "Organization",
+      "subtypes": [
+        "Utility"
+      ],
+      "roles": [
+        {
+          "role": "Author",
+          "scope_entity_id": "ent_maintenance_notice",
+          "valid_from": 0,
+          "valid_to": null,
+          "evidence_ids": []
+        }
+      ],
+      "classification_candidates": [],
+      "agent_eligible": false,
+      "agent_eligibility_basis": null,
+      "origin": "assumed",
+      "epistemic_status": "scenario_assumption",
+      "external_ids": [],
+      "evidence_ids": [],
+      "attributes": {},
+      "ontology_version": "incident_ontology.v1"
+    },
+    {
+      "schema_version": "world.v1",
+      "entity_id": "ent_maintenance_notice",
+      "display_name": "Pump station maintenance notice",
+      "primary_kind": "Artifact",
+      "subtypes": [
+        "MaintenanceNotice"
+      ],
+      "roles": [],
+      "classification_candidates": [],
+      "agent_eligible": false,
+      "agent_eligibility_basis": null,
+      "origin": "assumed",
+      "epistemic_status": "scenario_assumption",
+      "external_ids": [],
+      "evidence_ids": [],
+      "attributes": {
+        "format": "text"
+      },
+      "ontology_version": "incident_ontology.v1"
+    }
+  ],
+  "role_assignments": [],
+  "participations": [
+    {
+      "event_id": "ent_incident_001",
+      "participant_entity_id": "ent_operator_a",
+      "participation_role": "IncidentCoordinator",
+      "valid_from": 0,
+      "valid_to": null,
+      "evidence_ids": [],
+      "origin": "assumed"
+    },
+    {
+      "event_id": "ent_incident_001",
+      "participant_entity_id": "ent_east_utility",
+      "participation_role": "ResponsibleOperator",
+      "valid_from": 0,
+      "valid_to": null,
+      "evidence_ids": [],
+      "origin": "assumed"
+    },
+    {
+      "event_id": "ent_incident_001",
+      "participant_entity_id": "ent_repair_crew",
+      "participation_role": "AssignedCrew",
+      "valid_from": 0,
+      "valid_to": null,
+      "evidence_ids": [],
+      "origin": "assumed"
+    },
+    {
+      "event_id": "ent_incident_001",
+      "participant_entity_id": "ent_east_depot",
+      "participation_role": "SupplyDepot",
+      "valid_from": 0,
+      "valid_to": null,
+      "evidence_ids": [],
+      "origin": "assumed"
+    }
+  ],
+  "claims": [
+    {
+      "claim_id": "c_notice_mentions_incident",
+      "claim_kind": "relation",
+      "subject_entity_id": "ent_maintenance_notice",
+      "predicate": "MENTIONS",
+      "object_entity_id": "ent_incident_001",
+      "value": null,
+      "variable_key": null,
+      "evidence_ids": [],
+      "assertion_status": "asserted",
+      "valid_from": null,
+      "valid_to": null,
+      "conflict_group_id": null,
+      "origin": "assumed"
+    }
+  ],
+  "evidence": []
+}
