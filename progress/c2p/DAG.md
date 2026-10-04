@@ -99,7 +99,7 @@ $ forecast((1,0,0), baseline|extra_crew, 2)
 
 ### N2 — World schemas
 
-- status: `pending`
+- status: `in-progress`
 - depends: N0
 - substages: N2.1 records → N2.2 validators (`world/records.py`, `world/validation.py`;
   registry in `causal/registry.py`; memo tests `test_identity_and_links`,
@@ -112,10 +112,13 @@ $ forecast((1,0,0), baseline|extra_crew, 2)
   - `"false"` rejected
   - events/locations/topics/artifacts never eligible
   - a value of the wrong kind's domain is rejected
-- commits:
-- verifier:
+- commits: N2.1+N2.2 `feat(world)` records/validators commit; N2.3 registry pending
+- verifier (run by the orchestrator):
 
 ```text
+$ python3 -m pytest   (N2.1 records + N2.2 validators landed)
+50 passed in 0.18s
+pending: N2.3 kind-indexed VariableDef registry (wrong-kind domain rejection)
 ```
 
 ### N3 — Canonical store & run artifacts
