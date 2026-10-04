@@ -5,6 +5,30 @@
       "file": "kernels_incident_forecast.json",
       "oracle": "reference/python",
       "oracle_module": "c2p.kernels"
+    },
+    {
+      "description": "The 21 scenarios of tests/test_kernels.py as expressions with oracle outputs or raises.",
+      "file": "kernels_reference.json",
+      "oracle": "reference/python",
+      "oracle_module": "c2p.kernels"
+    },
+    {
+      "description": "Product and product_all names and JSON pair values, with escaping edge cases.",
+      "file": "kernels_products.json",
+      "oracle": "reference/python",
+      "oracle_module": "c2p.kernels"
+    },
+    {
+      "description": "math.fsum on adversarial inputs (hex in, hex out) and its ValueError/OverflowError cases.",
+      "file": "fsum_cases.json",
+      "oracle": "reference/python",
+      "oracle_module": "math"
+    },
+    {
+      "description": "fractions.Fraction construction, parsing, float conversion, and arithmetic as strings.",
+      "file": "rational_cases.json",
+      "oracle": "reference/python",
+      "oracle_module": "fractions"
     }
   ],
   "generator": "reference/python/golden/generate.py"

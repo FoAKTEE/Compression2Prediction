@@ -1,0 +1,1727 @@
+{
+  "cases": [
+    {
+      "checks": [
+        {
+          "expected": {
+            "raises": "ValueError"
+          },
+          "expr": {
+            "args": [
+              {
+                "ref": "UNIT"
+              },
+              {
+                "ref": "BIT"
+              },
+              [
+                [
+                  0.2,
+                  0.2
+                ]
+              ]
+            ],
+            "op": "kernel"
+          }
+        }
+      ],
+      "let": [],
+      "name": "test_reference_reject_unnormalized"
+    },
+    {
+      "checks": [
+        {
+          "expected": {
+            "raises": "ValueError"
+          },
+          "expr": {
+            "args": [
+              {
+                "ref": "UNIT"
+              },
+              {
+                "ref": "BIT"
+              },
+              [
+                [
+                  {
+                    "args": [
+                      "nan"
+                    ],
+                    "op": "float"
+                  },
+                  1.0
+                ]
+              ]
+            ],
+            "op": "kernel"
+          }
+        }
+      ],
+      "let": [],
+      "name": "test_reference_reject_nan"
+    },
+    {
+      "checks": [
+        {
+          "expected": {
+            "raises": "ValueError"
+          },
+          "expr": {
+            "args": [
+              {
+                "ref": "UNIT"
+              },
+              {
+                "ref": "BIT"
+              },
+              [
+                [
+                  -0.1,
+                  1.1
+                ]
+              ]
+            ],
+            "op": "kernel"
+          }
+        }
+      ],
+      "let": [],
+      "name": "test_reference_reject_negative"
+    },
+    {
+      "checks": [
+        {
+          "expected": {
+            "raises": "ValueError"
+          },
+          "expr": {
+            "args": [
+              {
+                "ref": "COIN"
+              },
+              {
+                "args": [
+                  {
+                    "ref": "other"
+                  }
+                ],
+                "op": "identity"
+              }
+            ],
+            "op": "then"
+          }
+        }
+      ],
+      "let": [
+        [
+          "other",
+          {
+            "args": [
+              "NotBit",
+              [
+                "0",
+                "1"
+              ]
+            ],
+            "op": "space"
+          }
+        ]
+      ],
+      "name": "test_reference_type_mismatch"
+    },
+    {
+      "checks": [
+        {
+          "expected": {
+            "kernel": {
+              "rows": [
+                [
+                  0.8,
+                  0.2
+                ],
+                [
+                  0.1,
+                  0.9
+                ]
+              ],
+              "source": {
+                "name": "Bit",
+                "values": [
+                  "0",
+                  "1"
+                ]
+              },
+              "target": {
+                "name": "Bit",
+                "values": [
+                  "0",
+                  "1"
+                ]
+              }
+            }
+          },
+          "expr": {
+            "args": [
+              {
+                "ref": "FLIP"
+              },
+              {
+                "args": [
+                  {
+                    "ref": "BIT"
+                  }
+                ],
+                "op": "identity"
+              }
+            ],
+            "op": "then"
+          }
+        },
+        {
+          "expected": {
+            "bool": true
+          },
+          "expr": {
+            "args": [
+              {
+                "args": [
+                  {
+                    "ref": "FLIP"
+                  },
+                  {
+                    "args": [
+                      {
+                        "ref": "BIT"
+                      }
+                    ],
+                    "op": "identity"
+                  }
+                ],
+                "op": "then"
+              },
+              {
+                "ref": "FLIP"
+              }
+            ],
+            "op": "equals"
+          }
+        },
+        {
+          "expected": {
+            "kernel": {
+              "rows": [
+                [
+                  0.8,
+                  0.2
+                ],
+                [
+                  0.1,
+                  0.9
+                ]
+              ],
+              "source": {
+                "name": "Bit",
+                "values": [
+                  "0",
+                  "1"
+                ]
+              },
+              "target": {
+                "name": "Bit",
+                "values": [
+                  "0",
+                  "1"
+                ]
+              }
+            }
+          },
+          "expr": {
+            "args": [
+              {
+                "args": [
+                  {
+                    "ref": "BIT"
+                  }
+                ],
+                "op": "identity"
+              },
+              {
+                "ref": "FLIP"
+              }
+            ],
+            "op": "then"
+          }
+        },
+        {
+          "expected": {
+            "bool": true
+          },
+          "expr": {
+            "args": [
+              {
+                "args": [
+                  {
+                    "args": [
+                      {
+                        "ref": "BIT"
+                      }
+                    ],
+                    "op": "identity"
+                  },
+                  {
+                    "ref": "FLIP"
+                  }
+                ],
+                "op": "then"
+              },
+              {
+                "ref": "FLIP"
+              }
+            ],
+            "op": "equals"
+          }
+        }
+      ],
+      "let": [],
+      "name": "test_reference_identity"
+    },
+    {
+      "checks": [
+        {
+          "expected": {
+            "kernel": {
+              "rows": [
+                [
+                  0.41500000000000004,
+                  0.5850000000000001
+                ]
+              ],
+              "source": {
+                "name": "Unit",
+                "values": [
+                  "*"
+                ]
+              },
+              "target": {
+                "name": "Bit",
+                "values": [
+                  "0",
+                  "1"
+                ]
+              }
+            }
+          },
+          "expr": {
+            "ref": "left"
+          }
+        },
+        {
+          "expected": {
+            "kernel": {
+              "rows": [
+                [
+                  0.4150000000000001,
+                  0.5850000000000001
+                ]
+              ],
+              "source": {
+                "name": "Unit",
+                "values": [
+                  "*"
+                ]
+              },
+              "target": {
+                "name": "Bit",
+                "values": [
+                  "0",
+                  "1"
+                ]
+              }
+            }
+          },
+          "expr": {
+            "ref": "right"
+          }
+        }
+      ],
+      "let": [
+        [
+          "left",
+          {
+            "args": [
+              {
+                "args": [
+                  {
+                    "ref": "COIN"
+                  },
+                  {
+                    "ref": "FLIP"
+                  }
+                ],
+                "op": "then"
+              },
+              {
+                "ref": "FLIP"
+              }
+            ],
+            "op": "then"
+          }
+        ],
+        [
+          "right",
+          {
+            "args": [
+              {
+                "ref": "COIN"
+              },
+              {
+                "args": [
+                  {
+                    "ref": "FLIP"
+                  },
+                  {
+                    "ref": "FLIP"
+                  }
+                ],
+                "op": "then"
+              }
+            ],
+            "op": "then"
+          }
+        ]
+      ],
+      "name": "test_reference_associativity"
+    },
+    {
+      "checks": [
+        {
+          "expected": {
+            "kernel": {
+              "rows": [
+                [
+                  1.0
+                ],
+                [
+                  1.0
+                ]
+              ],
+              "source": {
+                "name": "Bit",
+                "values": [
+                  "0",
+                  "1"
+                ]
+              },
+              "target": {
+                "name": "Unit",
+                "values": [
+                  "*"
+                ]
+              }
+            }
+          },
+          "expr": {
+            "args": [
+              {
+                "ref": "FLIP"
+              },
+              {
+                "args": [
+                  {
+                    "ref": "BIT"
+                  }
+                ],
+                "op": "discard"
+              }
+            ],
+            "op": "then"
+          }
+        },
+        {
+          "expected": {
+            "bool": true
+          },
+          "expr": {
+            "args": [
+              {
+                "args": [
+                  {
+                    "ref": "FLIP"
+                  },
+                  {
+                    "args": [
+                      {
+                        "ref": "BIT"
+                      }
+                    ],
+                    "op": "discard"
+                  }
+                ],
+                "op": "then"
+              },
+              {
+                "args": [
+                  {
+                    "ref": "BIT"
+                  }
+                ],
+                "op": "discard"
+              }
+            ],
+            "op": "equals"
+          }
+        }
+      ],
+      "let": [],
+      "name": "test_reference_discard"
+    },
+    {
+      "checks": [
+        {
+          "expected": {
+            "kernel": {
+              "rows": [
+                [
+                  0.5,
+                  0.0,
+                  0.0,
+                  0.5
+                ]
+              ],
+              "source": {
+                "name": "Unit",
+                "values": [
+                  "*"
+                ]
+              },
+              "target": {
+                "name": "(Bit*Bit)",
+                "values": [
+                  "[\"0\",\"0\"]",
+                  "[\"0\",\"1\"]",
+                  "[\"1\",\"0\"]",
+                  "[\"1\",\"1\"]"
+                ]
+              }
+            }
+          },
+          "expr": {
+            "args": [
+              {
+                "ref": "COIN"
+              },
+              {
+                "args": [
+                  {
+                    "ref": "BIT"
+                  }
+                ],
+                "op": "copy"
+              }
+            ],
+            "op": "then"
+          }
+        },
+        {
+          "expected": {
+            "kernel": {
+              "rows": [
+                [
+                  0.25,
+                  0.25,
+                  0.25,
+                  0.25
+                ]
+              ],
+              "source": {
+                "name": "(Unit*Unit)",
+                "values": [
+                  "[\"*\",\"*\"]"
+                ]
+              },
+              "target": {
+                "name": "(Bit*Bit)",
+                "values": [
+                  "[\"0\",\"0\"]",
+                  "[\"0\",\"1\"]",
+                  "[\"1\",\"0\"]",
+                  "[\"1\",\"1\"]"
+                ]
+              }
+            }
+          },
+          "expr": {
+            "args": [
+              {
+                "ref": "COIN"
+              },
+              {
+                "ref": "COIN"
+              }
+            ],
+            "op": "tensor"
+          }
+        }
+      ],
+      "let": [],
+      "name": "test_reference_copy_is_not_resampling"
+    },
+    {
+      "checks": [
+        {
+          "expected": {
+            "space": {
+              "name": "(Bit*Bit)",
+              "values": [
+                "[\"0\",\"0\"]",
+                "[\"0\",\"1\"]",
+                "[\"1\",\"0\"]",
+                "[\"1\",\"1\"]"
+              ]
+            }
+          },
+          "expr": {
+            "args": [
+              {
+                "ref": "BIT"
+              },
+              {
+                "ref": "BIT"
+              }
+            ],
+            "op": "product"
+          }
+        },
+        {
+          "expected": {
+            "kernel": {
+              "rows": [
+                [
+                  0.6400000000000001,
+                  0.16000000000000003,
+                  0.16000000000000003,
+                  0.04000000000000001
+                ],
+                [
+                  0.08000000000000002,
+                  0.7200000000000001,
+                  0.020000000000000004,
+                  0.18000000000000002
+                ],
+                [
+                  0.08000000000000002,
+                  0.020000000000000004,
+                  0.7200000000000001,
+                  0.18000000000000002
+                ],
+                [
+                  0.010000000000000002,
+                  0.09000000000000001,
+                  0.09000000000000001,
+                  0.81
+                ]
+              ],
+              "source": {
+                "name": "(Bit*Bit)",
+                "values": [
+                  "[\"0\",\"0\"]",
+                  "[\"0\",\"1\"]",
+                  "[\"1\",\"0\"]",
+                  "[\"1\",\"1\"]"
+                ]
+              },
+              "target": {
+                "name": "(Bit*Bit)",
+                "values": [
+                  "[\"0\",\"0\"]",
+                  "[\"0\",\"1\"]",
+                  "[\"1\",\"0\"]",
+                  "[\"1\",\"1\"]"
+                ]
+              }
+            }
+          },
+          "expr": {
+            "args": [
+              {
+                "ref": "FLIP"
+              },
+              {
+                "ref": "FLIP"
+              }
+            ],
+            "op": "tensor"
+          }
+        }
+      ],
+      "let": [],
+      "name": "test_reference_tensor_order"
+    },
+    {
+      "checks": [
+        {
+          "expected": {
+            "kernel": {
+              "rows": [
+                [
+                  0.0,
+                  1.0
+                ],
+                [
+                  0.0,
+                  1.0
+                ]
+              ],
+              "source": {
+                "name": "Bit",
+                "values": [
+                  "0",
+                  "1"
+                ]
+              },
+              "target": {
+                "name": "Bit",
+                "values": [
+                  "0",
+                  "1"
+                ]
+              }
+            }
+          },
+          "expr": {
+            "args": [
+              {
+                "ref": "BIT"
+              },
+              {
+                "ref": "BIT"
+              },
+              "1"
+            ],
+            "op": "constant"
+          }
+        }
+      ],
+      "let": [],
+      "name": "test_reference_hard_intervention_ignores_parents"
+    },
+    {
+      "checks": [
+        {
+          "expected": {
+            "raises": "ValueError"
+          },
+          "expr": {
+            "args": [
+              {
+                "ref": "BIT"
+              },
+              {
+                "ref": "BIT"
+              },
+              "missing"
+            ],
+            "op": "constant"
+          }
+        }
+      ],
+      "let": [],
+      "name": "test_reference_bad_intervention"
+    },
+    {
+      "checks": [
+        {
+          "expected": {
+            "vector": [
+              0.11111111111111112,
+              0.888888888888889
+            ]
+          },
+          "expr": {
+            "args": [
+              [
+                0.5,
+                0.5
+              ],
+              {
+                "ref": "emission"
+              },
+              "present"
+            ],
+            "op": "posterior"
+          }
+        }
+      ],
+      "let": [
+        [
+          "emission",
+          {
+            "args": [
+              {
+                "ref": "BIT"
+              },
+              {
+                "args": [
+                  "Signal",
+                  [
+                    "absent",
+                    "present"
+                  ]
+                ],
+                "op": "space"
+              },
+              [
+                [
+                  0.9,
+                  0.1
+                ],
+                [
+                  0.2,
+                  0.8
+                ]
+              ]
+            ],
+            "op": "kernel"
+          }
+        ]
+      ],
+      "name": "test_reference_bayes_update"
+    },
+    {
+      "checks": [
+        {
+          "expected": {
+            "raises": "ValueError"
+          },
+          "expr": {
+            "args": [
+              [
+                0.5,
+                0.5
+              ],
+              {
+                "ref": "emission"
+              },
+              "1"
+            ],
+            "op": "posterior"
+          }
+        }
+      ],
+      "let": [
+        [
+          "emission",
+          {
+            "args": [
+              {
+                "ref": "BIT"
+              },
+              {
+                "ref": "BIT"
+              },
+              [
+                [
+                  1.0,
+                  0.0
+                ],
+                [
+                  1.0,
+                  0.0
+                ]
+              ]
+            ],
+            "op": "kernel"
+          }
+        ]
+      ],
+      "name": "test_reference_zero_evidence_is_not_silently_repaired"
+    },
+    {
+      "checks": [
+        {
+          "expected": {
+            "kernel": {
+              "rows": [
+                [
+                  0.75,
+                  0.25
+                ],
+                [
+                  0.5,
+                  0.5
+                ]
+              ],
+              "source": {
+                "name": "Bit",
+                "values": [
+                  "0",
+                  "1"
+                ]
+              },
+              "target": {
+                "name": "Bit",
+                "values": [
+                  "0",
+                  "1"
+                ]
+              }
+            }
+          },
+          "expr": {
+            "args": [
+              {
+                "ref": "BIT"
+              },
+              [
+                [
+                  8,
+                  2
+                ],
+                [
+                  0,
+                  0
+                ]
+              ],
+              {
+                "ref": "prior"
+              },
+              2.0
+            ],
+            "op": "fit_counts"
+          }
+        }
+      ],
+      "let": [
+        [
+          "prior",
+          {
+            "args": [
+              {
+                "ref": "BIT"
+              },
+              {
+                "ref": "BIT"
+              },
+              [
+                [
+                  0.5,
+                  0.5
+                ],
+                [
+                  0.5,
+                  0.5
+                ]
+              ]
+            ],
+            "op": "kernel"
+          }
+        ]
+      ],
+      "name": "test_reference_prior_for_unseen_row"
+    },
+    {
+      "checks": [
+        {
+          "expected": {
+            "vector": [
+              1.0,
+              0.0
+            ]
+          },
+          "expr": {
+            "args": [
+              [
+                1.0,
+                0.0
+              ],
+              {
+                "ref": "FLIP"
+              },
+              0
+            ],
+            "op": "forecast"
+          }
+        }
+      ],
+      "let": [],
+      "name": "test_reference_zero_horizon"
+    },
+    {
+      "checks": [
+        {
+          "expected": {
+            "raises": "ValueError"
+          },
+          "expr": {
+            "args": [
+              [
+                1.0,
+                0.0
+              ],
+              {
+                "ref": "FLIP"
+              },
+              -1
+            ],
+            "op": "forecast"
+          }
+        }
+      ],
+      "let": [],
+      "name": "test_reference_negative_horizon"
+    },
+    {
+      "checks": [
+        {
+          "expected": {
+            "vector": [
+              0.36,
+              0.39,
+              0.25
+            ]
+          },
+          "expr": {
+            "args": [
+              [
+                1,
+                0,
+                0
+              ],
+              {
+                "ref": "baseline"
+              },
+              2
+            ],
+            "op": "forecast"
+          }
+        },
+        {
+          "expected": {
+            "vector": [
+              0.09,
+              0.28,
+              0.63
+            ]
+          },
+          "expr": {
+            "args": [
+              [
+                1,
+                0,
+                0
+              ],
+              {
+                "ref": "extra_crew"
+              },
+              2
+            ],
+            "op": "forecast"
+          }
+        }
+      ],
+      "let": [
+        [
+          "incident",
+          {
+            "args": [
+              "IncidentStatus",
+              [
+                "unacknowledged",
+                "acknowledged",
+                "resolved"
+              ]
+            ],
+            "op": "space"
+          }
+        ],
+        [
+          "baseline",
+          {
+            "args": [
+              {
+                "ref": "incident"
+              },
+              {
+                "ref": "incident"
+              },
+              [
+                [
+                  0.6,
+                  0.3,
+                  0.1
+                ],
+                [
+                  0.0,
+                  0.7,
+                  0.3
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ]
+            ],
+            "op": "kernel"
+          }
+        ],
+        [
+          "extra_crew",
+          {
+            "args": [
+              {
+                "ref": "incident"
+              },
+              {
+                "ref": "incident"
+              },
+              [
+                [
+                  0.3,
+                  0.4,
+                  0.3
+                ],
+                [
+                  0.0,
+                  0.4,
+                  0.6
+                ],
+                [
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ]
+            ],
+            "op": "kernel"
+          }
+        ]
+      ],
+      "name": "test_reference_illustrative_incident_forecast"
+    },
+    {
+      "checks": [
+        {
+          "expected": {
+            "space": {
+              "name": "(Bit*Bit)",
+              "values": [
+                "[\"0\",\"0\"]",
+                "[\"0\",\"1\"]",
+                "[\"1\",\"0\"]",
+                "[\"1\",\"1\"]"
+              ]
+            }
+          },
+          "expr": {
+            "args": [
+              {
+                "ref": "BIT"
+              },
+              {
+                "ref": "BIT"
+              }
+            ],
+            "op": "product"
+          }
+        },
+        {
+          "expected": {
+            "kernel": {
+              "rows": [
+                [
+                  0.5,
+                  0.0,
+                  0.0,
+                  0.5
+                ]
+              ],
+              "source": {
+                "name": "Unit",
+                "values": [
+                  "*"
+                ]
+              },
+              "target": {
+                "name": "(Bit*Bit)",
+                "values": [
+                  "[\"0\",\"0\"]",
+                  "[\"0\",\"1\"]",
+                  "[\"1\",\"0\"]",
+                  "[\"1\",\"1\"]"
+                ]
+              }
+            }
+          },
+          "expr": {
+            "args": [
+              {
+                "ref": "COIN"
+              },
+              {
+                "args": [
+                  {
+                    "ref": "BIT"
+                  }
+                ],
+                "op": "copy"
+              }
+            ],
+            "op": "then"
+          }
+        }
+      ],
+      "let": [],
+      "name": "test_tensor_order"
+    },
+    {
+      "checks": [
+        {
+          "expected": {
+            "bool": true
+          },
+          "expr": {
+            "args": [
+              {
+                "args": [
+                  []
+                ],
+                "op": "product_all"
+              },
+              {
+                "ref": "UNIT"
+              }
+            ],
+            "op": "equals"
+          }
+        },
+        {
+          "expected": {
+            "bool": true
+          },
+          "expr": {
+            "args": [
+              {
+                "args": [
+                  []
+                ],
+                "op": "product_all"
+              },
+              {
+                "ref": "UNIT"
+              }
+            ],
+            "op": "is"
+          }
+        },
+        {
+          "expected": {
+            "bool": true
+          },
+          "expr": {
+            "args": [
+              {
+                "args": [
+                  [
+                    {
+                      "ref": "a"
+                    }
+                  ]
+                ],
+                "op": "product_all"
+              },
+              {
+                "ref": "a"
+              }
+            ],
+            "op": "is"
+          }
+        },
+        {
+          "expected": {
+            "bool": true
+          },
+          "expr": {
+            "args": [
+              {
+                "args": [
+                  [
+                    {
+                      "ref": "a"
+                    }
+                  ]
+                ],
+                "op": "product_all"
+              },
+              {
+                "ref": "a"
+              }
+            ],
+            "op": "equals"
+          }
+        },
+        {
+          "expected": {
+            "space": {
+              "name": "((A*B)*C)",
+              "values": [
+                "[\"[\\\"a0\\\",\\\"b0\\\"]\",\"c0\"]",
+                "[\"[\\\"a0\\\",\\\"b0\\\"]\",\"c1\"]",
+                "[\"[\\\"a0\\\",\\\"b1\\\"]\",\"c0\"]",
+                "[\"[\\\"a0\\\",\\\"b1\\\"]\",\"c1\"]",
+                "[\"[\\\"a0\\\",\\\"b2\\\"]\",\"c0\"]",
+                "[\"[\\\"a0\\\",\\\"b2\\\"]\",\"c1\"]",
+                "[\"[\\\"a1\\\",\\\"b0\\\"]\",\"c0\"]",
+                "[\"[\\\"a1\\\",\\\"b0\\\"]\",\"c1\"]",
+                "[\"[\\\"a1\\\",\\\"b1\\\"]\",\"c0\"]",
+                "[\"[\\\"a1\\\",\\\"b1\\\"]\",\"c1\"]",
+                "[\"[\\\"a1\\\",\\\"b2\\\"]\",\"c0\"]",
+                "[\"[\\\"a1\\\",\\\"b2\\\"]\",\"c1\"]"
+              ]
+            }
+          },
+          "expr": {
+            "args": [
+              [
+                {
+                  "ref": "a"
+                },
+                {
+                  "ref": "b"
+                },
+                {
+                  "ref": "c"
+                }
+              ]
+            ],
+            "op": "product_all"
+          }
+        },
+        {
+          "expected": {
+            "space": {
+              "name": "((A*B)*C)",
+              "values": [
+                "[\"[\\\"a0\\\",\\\"b0\\\"]\",\"c0\"]",
+                "[\"[\\\"a0\\\",\\\"b0\\\"]\",\"c1\"]",
+                "[\"[\\\"a0\\\",\\\"b1\\\"]\",\"c0\"]",
+                "[\"[\\\"a0\\\",\\\"b1\\\"]\",\"c1\"]",
+                "[\"[\\\"a0\\\",\\\"b2\\\"]\",\"c0\"]",
+                "[\"[\\\"a0\\\",\\\"b2\\\"]\",\"c1\"]",
+                "[\"[\\\"a1\\\",\\\"b0\\\"]\",\"c0\"]",
+                "[\"[\\\"a1\\\",\\\"b0\\\"]\",\"c1\"]",
+                "[\"[\\\"a1\\\",\\\"b1\\\"]\",\"c0\"]",
+                "[\"[\\\"a1\\\",\\\"b1\\\"]\",\"c1\"]",
+                "[\"[\\\"a1\\\",\\\"b2\\\"]\",\"c0\"]",
+                "[\"[\\\"a1\\\",\\\"b2\\\"]\",\"c1\"]"
+              ]
+            }
+          },
+          "expr": {
+            "args": [
+              {
+                "args": [
+                  {
+                    "ref": "a"
+                  },
+                  {
+                    "ref": "b"
+                  }
+                ],
+                "op": "product"
+              },
+              {
+                "ref": "c"
+              }
+            ],
+            "op": "product"
+          }
+        },
+        {
+          "expected": {
+            "bool": true
+          },
+          "expr": {
+            "args": [
+              {
+                "args": [
+                  [
+                    {
+                      "ref": "a"
+                    },
+                    {
+                      "ref": "b"
+                    },
+                    {
+                      "ref": "c"
+                    }
+                  ]
+                ],
+                "op": "product_all"
+              },
+              {
+                "args": [
+                  {
+                    "args": [
+                      {
+                        "ref": "a"
+                      },
+                      {
+                        "ref": "b"
+                      }
+                    ],
+                    "op": "product"
+                  },
+                  {
+                    "ref": "c"
+                  }
+                ],
+                "op": "product"
+              }
+            ],
+            "op": "equals"
+          }
+        },
+        {
+          "expected": {
+            "space": {
+              "name": "(A*(B*C))",
+              "values": [
+                "[\"a0\",\"[\\\"b0\\\",\\\"c0\\\"]\"]",
+                "[\"a0\",\"[\\\"b0\\\",\\\"c1\\\"]\"]",
+                "[\"a0\",\"[\\\"b1\\\",\\\"c0\\\"]\"]",
+                "[\"a0\",\"[\\\"b1\\\",\\\"c1\\\"]\"]",
+                "[\"a0\",\"[\\\"b2\\\",\\\"c0\\\"]\"]",
+                "[\"a0\",\"[\\\"b2\\\",\\\"c1\\\"]\"]",
+                "[\"a1\",\"[\\\"b0\\\",\\\"c0\\\"]\"]",
+                "[\"a1\",\"[\\\"b0\\\",\\\"c1\\\"]\"]",
+                "[\"a1\",\"[\\\"b1\\\",\\\"c0\\\"]\"]",
+                "[\"a1\",\"[\\\"b1\\\",\\\"c1\\\"]\"]",
+                "[\"a1\",\"[\\\"b2\\\",\\\"c0\\\"]\"]",
+                "[\"a1\",\"[\\\"b2\\\",\\\"c1\\\"]\"]"
+              ]
+            }
+          },
+          "expr": {
+            "args": [
+              {
+                "ref": "a"
+              },
+              {
+                "args": [
+                  {
+                    "ref": "b"
+                  },
+                  {
+                    "ref": "c"
+                  }
+                ],
+                "op": "product"
+              }
+            ],
+            "op": "product"
+          }
+        }
+      ],
+      "let": [
+        [
+          "a",
+          {
+            "args": [
+              "A",
+              [
+                "a0",
+                "a1"
+              ]
+            ],
+            "op": "space"
+          }
+        ],
+        [
+          "b",
+          {
+            "args": [
+              "B",
+              [
+                "b0",
+                "b1",
+                "b2"
+              ]
+            ],
+            "op": "space"
+          }
+        ],
+        [
+          "c",
+          {
+            "args": [
+              "C",
+              [
+                "c0",
+                "c1"
+              ]
+            ],
+            "op": "space"
+          }
+        ]
+      ],
+      "name": "test_product_all_unit_single_and_left_fold"
+    },
+    {
+      "checks": [
+        {
+          "expected": {
+            "kernel": {
+              "rows": [
+                [
+                  0.625,
+                  0.375
+                ],
+                [
+                  0.39,
+                  0.61
+                ],
+                [
+                  0.38000000000000006,
+                  0.62
+                ]
+              ],
+              "source": {
+                "name": "X",
+                "values": [
+                  "x0",
+                  "x1",
+                  "x2"
+                ]
+              },
+              "target": {
+                "name": "Z",
+                "values": [
+                  "z0",
+                  "z1"
+                ]
+              }
+            }
+          },
+          "expr": {
+            "args": [
+              {
+                "ref": "k"
+              },
+              {
+                "ref": "l"
+              }
+            ],
+            "op": "then"
+          }
+        },
+        {
+          "expected": {
+            "raises": "ValueError"
+          },
+          "expr": {
+            "args": [
+              {
+                "ref": "l"
+              },
+              {
+                "ref": "k"
+              }
+            ],
+            "op": "then"
+          }
+        }
+      ],
+      "let": [
+        [
+          "x",
+          {
+            "args": [
+              "X",
+              [
+                "x0",
+                "x1",
+                "x2"
+              ]
+            ],
+            "op": "space"
+          }
+        ],
+        [
+          "y",
+          {
+            "args": [
+              "Y",
+              [
+                "y0",
+                "y1",
+                "y2"
+              ]
+            ],
+            "op": "space"
+          }
+        ],
+        [
+          "z",
+          {
+            "args": [
+              "Z",
+              [
+                "z0",
+                "z1"
+              ]
+            ],
+            "op": "space"
+          }
+        ],
+        [
+          "k",
+          {
+            "args": [
+              {
+                "ref": "x"
+              },
+              {
+                "ref": "y"
+              },
+              [
+                [
+                  0.5,
+                  0.25,
+                  0.25
+                ],
+                [
+                  0.1,
+                  0.6,
+                  0.3
+                ],
+                [
+                  0.0,
+                  0.2,
+                  0.8
+                ]
+              ]
+            ],
+            "op": "kernel"
+          }
+        ],
+        [
+          "l",
+          {
+            "args": [
+              {
+                "ref": "y"
+              },
+              {
+                "ref": "z"
+              },
+              [
+                [
+                  0.9,
+                  0.1
+                ],
+                [
+                  0.3,
+                  0.7
+                ],
+                [
+                  0.4,
+                  0.6
+                ]
+              ]
+            ],
+            "op": "kernel"
+          }
+        ]
+      ],
+      "name": "test_composition_matches_matrix_product"
+    },
+    {
+      "checks": [
+        {
+          "expected": {
+            "raises": "ValueError"
+          },
+          "expr": {
+            "args": [
+              [
+                1.0,
+                0.0
+              ],
+              {
+                "ref": "FLIP"
+              },
+              true
+            ],
+            "op": "forecast"
+          }
+        }
+      ],
+      "let": [],
+      "name": "test_forecast_rejects_bool_steps"
+    }
+  ],
+  "let": [
+    [
+      "BIT",
+      {
+        "args": [
+          "Bit",
+          [
+            "0",
+            "1"
+          ]
+        ],
+        "op": "space"
+      }
+    ],
+    [
+      "COIN",
+      {
+        "args": [
+          {
+            "ref": "UNIT"
+          },
+          {
+            "ref": "BIT"
+          },
+          [
+            [
+              0.5,
+              0.5
+            ]
+          ]
+        ],
+        "op": "kernel"
+      }
+    ],
+    [
+      "FLIP",
+      {
+        "args": [
+          {
+            "ref": "BIT"
+          },
+          {
+            "ref": "BIT"
+          },
+          [
+            [
+              0.8,
+              0.2
+            ],
+            [
+              0.1,
+              0.9
+            ]
+          ]
+        ],
+        "op": "kernel"
+      }
+    ]
+  ],
+  "oracle": "reference/python",
+  "oracle_module": "c2p.kernels",
+  "tolerance": 1e-12
+}

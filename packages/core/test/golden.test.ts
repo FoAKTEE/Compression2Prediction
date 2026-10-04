@@ -31,7 +31,7 @@ describe("golden fixtures", () => {
       expect(file).toMatch(/^[a-z0-9_]+\.json$/);
       expect(entry.description).not.toBe("");
       expect(entry.oracle).toBe("reference/python");
-      expect(entry.oracle_module).toMatch(/^c2p(\.[a-z_]+)+$/);
+      expect(entry.oracle_module).toMatch(/^(?:c2p(?:\.[a-z_]+)+|math|fractions)$/);
       expect(existsSync(join(goldenDir, file))).toBe(true);
       const fixture = readJson(file) as Record<string, unknown>;
       expect(fixture.oracle).toBe(entry.oracle);

@@ -1,2 +1,26 @@
 /** Package version of @c2p/core. */
 export const VERSION = "0.1.0";
+
+export { ValueError } from "./errors.js";
+export { pythonJsonPair, pythonJsonString } from "./json.js";
+export { fsum } from "./numeric/fsum.js";
+export { Rational } from "./numeric/rational.js";
+export {
+  constant,
+  copy,
+  discard,
+  fitCounts,
+  forecast,
+  identity,
+  Kernel,
+  kernelEquals,
+  posterior,
+  probabilityVector,
+  product,
+  productAll,
+  Space,
+  spaceEquals,
+  TOL,
+  UNIT,
+} from "./kernels.js";
+export type { Vector } from "./kernels.js";

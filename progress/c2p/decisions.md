@@ -229,3 +229,15 @@ say so explicitly and never rewrite history.
   `vue-tsc` can load (see D13); 7.0.2 ships no classic JS API.
 - why: the core cannot depend on the server package where the store lives
   (init.md §1.3), so the N3 edge from D8 becomes a persistence-only edge.
+
+## D15 — `Kernel.then` is renamed `andThen` in TypeScript
+
+- date: 2026-10-04
+- decision: The TypeScript composition method is `K.andThen(L)` (the oracle's
+  `K.then(L)`, i.e. L ∘ K with matrix P_K P_L). No core class may declare a
+  `then` member; a parser-based guard test enforces this.
+- why: any object with a `then` method is treated as a thenable, so returning a
+  Kernel from an async function (every Fastify handler) rejected with a
+  TypeError. Verified before and after the rename.
+- alternatives: keep `then` and wrap kernels before crossing async boundaries
+  (rejected: easy to forget, fails at runtime).

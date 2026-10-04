@@ -143,7 +143,7 @@ $ server start + curl /api/health (worker run, PORT=5099)
 
 ### N1 — Finite kernel core
 
-- status: `in-progress`
+- status: `done`
 - depends: N0b
 - substages: Python oracle done; TypeScript port pending. Single stage — port the
   guide §12.1/§12.2 reference API to `packages/core/src/kernels.ts` with Shewchuk
@@ -166,6 +166,29 @@ $ AST diff of src/c2p/kernels.py vs guide §12.1 (docstrings stripped)
 guide defs: 11 mismatched: [] extra: [product_all]
 $ forecast((1,0,0), baseline|extra_crew, 2)
 [0.36, 0.39, 0.25] [0.09, 0.28, 0.63]
+```
+- TypeScript port verifier (run by the orchestrator; commit: the `feat(kernels)` TypeScript port):
+
+```text
+$ npx vitest run --project core
+ ✓ |core| packages/core/test/golden.test.ts (7 tests) 22ms
+ ✓ |core| packages/core/test/smoke.test.ts (4 tests) 9ms
+ ✓ |core| packages/core/test/kernels.test.ts (26 tests) 208ms
+ ✓ |core| packages/core/test/json.test.ts (44 tests) 57ms
+ ✓ |core| packages/core/test/kernels.golden.test.ts (40 tests) 219ms
+ ✓ |core| packages/core/test/rational.test.ts (226 tests) 259ms
+ ✓ |core| packages/core/test/fsum.test.ts (56 tests) 362ms
+ ✓ |core| packages/core/test/thenable.test.ts (3 tests) 437ms
+   ✓ no thenable core types (3)
+     ✓ no class in packages/core/src declares a `then` member 376ms
+ Test Files  8 passed (8)
+      Tests  406 passed (406)
+$ npm run golden:check
+golden check: ok (6 files)
+$ async return of a Kernel (thenable regression)
+async return ok: true 'then' in k: false
+$ cd reference/python && python3 -m pytest
+55 passed in 0.23s
 ```
 
 ### N2 — World schemas + registry
