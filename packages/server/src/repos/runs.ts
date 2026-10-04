@@ -1,7 +1,7 @@
 /**
  * Forecast-run and report records, always looked up through their owning
- * project so a cross-project ID resolves to nothing. Run outputs themselves
- * belong in run directories and artifacts (N5); these rows index them.
+ * project so a cross-project ID resolves to nothing. Run outputs live in
+ * published run directories; these rows index them and serve the response.
  */
 import type { DatabaseSync } from "node:sqlite";
 import { canonicalJson, ValueError } from "@c2p/core";
@@ -52,17 +52,25 @@ export class RunRepo {
 export class ReportRepo {
   constructor(private readonly db: DatabaseSync) {}
 
-  /** Stores the serializer input; absent metrics stay absent until serialization. */
+  /**
+   * Stores the serializer input; absent metrics stay absent until
+   * serialization. Metrics are stored in wire form, so +∞ stays "+inf"
+   * instead of becoming `null` in JSON (D17); NaN and -∞ are rejected.
+   */
   insert(report: ReportInput): void {
     validateName(report.report_id, "report_id");
-    serializeReport(report); // rejects non-finite metrics before JSON could turn them into null
+    const wire = serializeReport(report);
     const owner = this.db.prepare("SELECT project_id FROM forecast_runs WHERE run_id = ?").get(report.run_id);
     if (owner === undefined || owner.project_id !== report.project_id) {
       throw new ValueError(`report ${report.report_id}: run ${report.run_id} does not belong to ${report.project_id}`);
     }
+    const record: ReportInput = {
+      ...report,
+      validation: { ...report.validation, nll_bits: wire.validation.nll_bits, brier: wire.validation.brier },
+    };
     this.db
       .prepare("INSERT INTO reports (report_id, project_id, run_id, record, created_at) VALUES (?, ?, ?, ?, ?)")
-      .run(report.report_id, report.project_id, report.run_id, JSON.stringify(report), report.created_at);
+      .run(report.report_id, report.project_id, report.run_id, JSON.stringify(record), report.created_at);
   }
 
   get(reportId: string): ReportInput | null {

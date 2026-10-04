@@ -1,12 +1,16 @@
 /**
  * `/api/forecast`: request validation (bounds, half-open intervention windows,
- * query kind), run listing, and project-scoped run lookups. Execution answers
- * 501 until inference (N5) is wired.
+ * query kind), exact forecast execution against the latest compiled plan
+ * (a published run directory plus a report), run listing, and
+ * project-scoped run lookups. Rank diagnostics answer 501 until N6.
  */
 import { isPlainObject } from "@c2p/core";
 import type { FastifyInstance } from "fastify";
 import type { Bounds } from "../config.js";
 import type { AppContext } from "../context.js";
+import { repoSha } from "../forecast/repoSha.js";
+import { executeForecast } from "../forecast/service.js";
+import type { ForecastResult } from "../forecast/types.js";
 import { nameParam } from "../ids.js";
 import type { ForecastRequest, Intervention, InterventionKind, QueryKind } from "../wire.js";
 import { requireProject } from "./common.js";
@@ -158,11 +162,19 @@ interface RunParams extends ProjectParams {
 }
 
 export function registerForecastRoutes(app: FastifyInstance, ctx: AppContext): void {
-  app.post<{ Params: ProjectParams }>("/api/forecast/projects/:projectId/forecasts", async (req) => {
-    requireProject(ctx, req.params.projectId);
-    validateForecastRequest(req.body, ctx.config.bounds);
-    throw notImplemented("forecast execution is not available yet (inference engine not wired)");
-  });
+  // Read once at startup; recorded in every run manifest.
+  const sha = repoSha();
+
+  app.post<{ Params: ProjectParams }>(
+    "/api/forecast/projects/:projectId/forecasts",
+    async (req, reply): Promise<ForecastResult> => {
+      const project = requireProject(ctx, req.params.projectId);
+      const request = validateForecastRequest(req.body, ctx.config.bounds);
+      const result = executeForecast(ctx, project, request, { repoSha: sha });
+      void reply.code(201);
+      return result;
+    },
+  );
 
   app.get<{ Params: ProjectParams }>("/api/forecast/projects/:projectId/runs", async (req) => {
     const project = requireProject(ctx, req.params.projectId);

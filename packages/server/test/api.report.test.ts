@@ -1,7 +1,10 @@
 import { ValueError } from "@c2p/core";
+import type { FastifyInstance } from "fastify";
 import { afterEach, describe, expect, it } from "vitest";
+import type { ForecastResult } from "../src/forecast/types.js";
 import { serializeReport } from "../src/report/serialize.js";
-import type { ReportInput } from "../src/report/serialize.js";
+import type { ForecastReportBody, ReportInput, ReportStatement } from "../src/report/serialize.js";
+import { incidentModel, incidentWorld } from "./fixtures/incident.js";
 import { cleanup, createProject, expectError, makeApp } from "./helpers.js";
 
 afterEach(cleanup);
@@ -88,12 +91,33 @@ describe("report serializer", () => {
     });
   });
 
-  it("rejects non-finite metrics instead of letting JSON turn them into null", () => {
-    expect(() => serializeReport(report({ validation: { status: "backtested", nll_bits: Infinity } }))).toThrow(ValueError);
+  it("sends an infinite NLL as the literal \"+inf\" (D17) and rejects every other non-finite metric", () => {
+    const v = serializeReport(report({ validation: { status: "backtested", nll_bits: Infinity } })).validation;
+    expect(v.nll_bits).toBe("+inf");
+    expect(JSON.stringify(v)).toContain('"nll_bits":"+inf"');
+    expect(serializeReport(report({ validation: { status: "backtested", nll_bits: "+inf" } })).validation.nll_bits).toBe("+inf");
+    expect(() => serializeReport(report({ validation: { status: "backtested", nll_bits: -Infinity } }))).toThrow(ValueError);
+    expect(() => serializeReport(report({ validation: { status: "backtested", nll_bits: Number.NaN } }))).toThrow(ValueError);
+    // Brier is bounded: an infinite value is a bug, not an impossible outcome.
+    expect(() => serializeReport(report({ validation: { status: "backtested", brier: Infinity } }))).toThrow(ValueError);
     expect(() => serializeReport(report({ validation: { status: "backtested", brier: Number.NaN } }))).toThrow(ValueError);
     expect(() =>
       serializeReport(report({ validation: { status: "x", calibration: { bins: [], expected_calibration_error: NaN } } })),
     ).toThrow(ValueError);
+  });
+
+  it("refuses statements that read as real-world probabilities", () => {
+    const say = (text: string): ReportStatement[] => [{ kind: "distribution", scenario_id: "baseline", horizon_step: 2, value: "resolved", text }];
+    expect(serializeReport(report({ statements: say("In this model, 25% of the two-step probability mass is in the resolved state.") })).statements).toHaveLength(1);
+    for (const text of [
+      "The incident has a validated 63% real-world chance of resolution.",
+      "There is a 25% chance of resolution.",
+      "In this model, the incident will be resolved with 25% probability.",
+      "In this model, the incident is likely to be resolved.",
+      "In this model, the real-world probability is 25%.",
+    ]) {
+      expect(() => serializeReport(report({ statements: say(text) })), text).toThrow(ValueError);
+    }
   });
 });
 
@@ -133,7 +157,7 @@ describe("GET /api/report/reports/:reportId", () => {
     ]);
   });
 
-  it("refuses to store a report whose metric has no wire form", async () => {
+  it("stores an infinite NLL as \"+inf\" and refuses a metric with no wire form", async () => {
     const app = await makeApp();
     const projectId = await createProject(app);
     app.c2p.runs.insert({
@@ -152,8 +176,155 @@ describe("GET /api/report/reports/:reportId", () => {
       report_id: null,
     });
     expect(() =>
-      app.c2p.reports.insert(report({ project_id: projectId, validation: { status: "backtested", nll_bits: Infinity } })),
+      app.c2p.reports.insert(report({ project_id: projectId, validation: { status: "backtested", nll_bits: Number.NaN } })),
     ).toThrow(ValueError);
     expectError(await app.inject({ method: "GET", url: "/api/report/reports/rep_1" }), 404, "report_not_found");
+
+    app.c2p.reports.insert(report({ project_id: projectId, validation: { status: "backtested", nll_bits: Infinity } }));
+    const res = await app.inject({ method: "GET", url: "/api/report/reports/rep_1" });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().validation.nll_bits).toBe("+inf");
+    expect(res.json().validation.brier).toBe("missing");
+  });
+});
+
+// ---------------------------------------------------------------- reports of forecast runs
+
+/** Guide §11.1 request: hold crew capacity high over transitions 0→1 and 1→2. */
+const EXTRA_CREW = {
+  scenario_id: "extra_crew",
+  query_kind: "interventional",
+  target_entity_id: "ent_incident_001",
+  target_variable: "incident_status",
+  horizon_steps: 2,
+  step_minutes: 60,
+  interventions: [{ kind: "hard", target_variable: "crew_capacity", value: "high", start_step: 0, end_step_exclusive: 2 }],
+};
+const BASELINE = { ...EXTRA_CREW, scenario_id: undefined, query_kind: "observational", interventions: [] };
+
+async function compiled(app: FastifyInstance): Promise<string> {
+  const id = await createProject(app);
+  expect((await app.inject({ method: "PUT", url: `/api/world/projects/${id}/world`, payload: incidentWorld() })).statusCode).toBe(200);
+  expect((await app.inject({ method: "PUT", url: `/api/model/projects/${id}/model`, payload: incidentModel() })).statusCode).toBe(200);
+  expect((await app.inject({ method: "POST", url: `/api/model/projects/${id}/compile`, payload: {} })).json().ok).toBe(true);
+  return id;
+}
+
+async function forecast(app: FastifyInstance, id: string, body: object): Promise<ForecastResult> {
+  const res = await app.inject({ method: "POST", url: `/api/forecast/projects/${id}/forecasts`, payload: body });
+  expect(res.statusCode, res.body).toBe(201);
+  return res.json() as ForecastResult;
+}
+
+async function getReport(app: FastifyInstance, reportId: string): Promise<{ body: ForecastReportBody; text: string }> {
+  const res = await app.inject({ method: "GET", url: `/api/report/reports/${reportId}` });
+  expect(res.statusCode, res.body).toBe(200);
+  return { body: res.json() as ForecastReportBody, text: res.body };
+}
+
+const resolved = (body: ForecastReportBody, i: number): number => body.forecasts[i]!.by_horizon[1]!.distribution[2]!.probability;
+
+describe("reports of forecast runs", () => {
+  it("states target, horizon, cutoff, origin, model version, validation, uncertainty method, distributions, and assumptions", async () => {
+    const app = await makeApp();
+    const id = await compiled(app);
+    const run = await forecast(app, id, EXTRA_CREW);
+    const { body } = await getReport(app, run.report_id);
+
+    expect(body).toMatchObject({
+      report_id: run.report_id,
+      project_id: id,
+      run_id: run.run_id,
+      target_entity_id: "ent_incident_001",
+      target_variable: "incident_status",
+      horizon_steps: 2,
+      step_minutes: 60,
+      cutoff: null,
+      origin: "assumed",
+      model_version: run.model_version,
+      plan_version: run.plan_version,
+      graph_hash: run.graph_hash,
+      model_hash: run.model_hash,
+      intervened_model_hash: run.intervened_model_hash,
+      query_kind: "interventional",
+      effect_status: "model_based_intervention",
+      scenario_id: "extra_crew",
+      base_scenario_id: "baseline",
+      uncertainty: { parameter: "missing", model_error: "missing", method: "exact_enumeration_given_hand_specified_kernels" },
+      source_backed: { evidence_count: 0, claim_count: 1 },
+    });
+    expect(body.validation).toEqual({
+      status: "not_empirically_validated",
+      nll_bits: "missing",
+      brier: "missing",
+      calibration: "missing",
+      parameter_uncertainty: "missing",
+      model_error: "missing",
+    });
+
+    // Baseline vs intervention, by horizon.
+    expect(body.forecasts.map((f) => [f.scenario_id, f.is_baseline, f.effect_status])).toEqual([
+      ["baseline", true, "not_applicable"],
+      ["extra_crew", false, "model_based_intervention"],
+    ]);
+    expect(body.forecasts[0]!.by_horizon.map((h) => h.horizon_step)).toEqual([1, 2]);
+    expect(Math.abs(resolved(body, 0) - 0.25)).toBeLessThanOrEqual(1e-12);
+    expect(Math.abs(resolved(body, 1) - 0.63)).toBeLessThanOrEqual(1e-12);
+    expect(body.forecasts[1]!.by_horizon).toEqual(run.intervention!.by_horizon);
+
+    // Assumptions, separate from source-backed observations.
+    const a = body.assumptions!;
+    expect(a.causal_basis).toEqual(["explicit_model_assumption"]);
+    expect(a.kernels).toEqual(run.provenance.kernels);
+    expect(a.kernels[0]).toMatchObject({ parameter_origin: "hand_specified_illustration", causal_basis: "explicit_model_assumption" });
+    expect(a.priors).toHaveLength(5);
+    expect(a.priors.every((p) => p.origin === "assumed")).toBe(true);
+    expect(a.interventions).toEqual(run.interventions);
+    expect(a.notes.join(" ")).toMatch(/not an identified causal effect/);
+  });
+
+  it("calibration is the literal \"missing\", never a number; statements speak only about the model", async () => {
+    const app = await makeApp();
+    const id = await compiled(app);
+    const run = await forecast(app, id, EXTRA_CREW);
+    const { body, text } = await getReport(app, run.report_id);
+
+    expect(typeof body.validation.calibration).toBe("string");
+    expect(body.validation.calibration).toBe("missing");
+    expect(text).toContain('"calibration":"missing"');
+    expect(text).not.toMatch(/"calibration":\s*[{[\d-]/);
+    expect(text).not.toMatch(/expected_calibration_error/);
+    expect([body.validation.nll_bits, body.validation.brier]).toEqual(["missing", "missing"]);
+
+    const statements = body.statements!;
+    expect(statements.length).toBeGreaterThan(0);
+    for (const s of statements) {
+      expect(s.text.startsWith("In this model")).toBe(true);
+      expect(s.text).not.toMatch(/chance of|will be resolved/i);
+    }
+    expect(text.toLowerCase()).not.toMatch(/chance of|will be resolved/);
+    const say = (scenario: string | null, kind: string) =>
+      statements.find((s) => s.scenario_id === scenario && s.kind === kind && s.value === "resolved")!.text;
+    expect(say("baseline", "distribution")).toBe("In this model, 25% of the two-step probability mass is in the resolved state.");
+    expect(say("extra_crew", "distribution")).toBe(
+      "In this model, under the model-based intervention (crew_capacity = high for ent_repair_crew over steps [0, 2)), " +
+        "63% of the two-step probability mass is in the resolved state.",
+    );
+    expect(say(null, "comparison")).toMatch(/63% under the model-based intervention and 25% without it.*not an identified causal effect/);
+    expect(body.statement_policy).toMatch(/probability mass in this model only/);
+  });
+
+  it("an observational run's report has one forecast and model-only statements", async () => {
+    const app = await makeApp();
+    const id = await compiled(app);
+    const run = await forecast(app, id, BASELINE);
+    const { body } = await getReport(app, run.report_id);
+    expect(body.forecasts.map((f) => [f.scenario_id, f.is_baseline])).toEqual([["baseline", true]]);
+    expect(body.effect_status).toBe("not_applicable");
+    expect(body.statements!.map((s) => s.text)).toEqual([
+      "In this model, 36% of the two-step probability mass is in the unacknowledged state.",
+      "In this model, 39% of the two-step probability mass is in the acknowledged state.",
+      "In this model, 25% of the two-step probability mass is in the resolved state.",
+    ]);
   });
 });

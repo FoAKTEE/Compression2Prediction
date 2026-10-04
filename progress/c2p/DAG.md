@@ -464,18 +464,19 @@ acceptance: six-entity document keeps all 6 entities with kinds and evidence spa
   - tasks survive a restart
   - the report endpoint returns `missing` (not a number) for absent calibration
   - no network
-- commits: skeleton b320c11; phase b: the `feat(api)` model import/compile/examples commit; forecast/rank/extraction wiring pending
+- commits: b320c11 skeleton; e74c8ae model/compile; the `feat(api)` forecast runs and reports commit; rank and observer routes pending
 - verifier (run by the orchestrator):
 
 ```text
-$ npx vitest run --project server   (87 passed incl. model/examples suites)
- ✓ |server| packages/server/test/api.examples.test.ts (5 tests) 989ms
- ✓ |server| packages/server/test/api.model.test.ts (11 tests) 2387ms
- Test Files  13 passed (13)
-      Tests  102 passed (102)
-$ npx tsc -b -> exit 0
-smoke (worker, built server PORT=5097): incident example world 6/1 counts -> PUT model {variables 3, templates 1, kernels 1, sources 5} -> compile ok:true -> mechanism-graph 2 bindings, inputs status,crew,supplies, one output each
-pending: forecasts (N5 wiring), rank (N6), extraction registration (N8)
+$ npx vitest run --project server
+ ✓ |server| packages/server/test/api.report.test.ts (10 tests) 1188ms
+   ✓ GET /api/report/reports/:reportId (2)
+ ✓ |server| packages/server/test/api.forecast.test.ts (13 tests) 2255ms
+ Test Files  15 passed (15)
+      Tests  120 passed (120)
+$ npx tsc -b packages/server packages/server/test -> exit 0
+smoke (worker, built server PORT=5096): incident example step 2 baseline (0.36, 0.39, 0.25); do(crew=high) over [0,2) (0.09, 0.28, 0.63), effect_status model_based_intervention; uncertainty parameter/model_error "missing"; report statement "In this model, ... 63% of the two-step probability mass is in the resolved state."; counterfactual 422
+pending: rank diagnostics route (N6.rank), observer-run route (N9)
 ```
 
 ### N12 — Frontend scaffold

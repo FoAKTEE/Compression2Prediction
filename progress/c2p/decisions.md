@@ -398,3 +398,101 @@ say so explicitly and never rewrite history.
   of existing state files; a new table does not); leaving the port null for
   kernel order mismatches (rejected: a swapped declaration is the common
   error, and the port is what the user must fix).
+
+## D19 — Forecast runs: per-step exact queries, published run directories, report statement policy
+
+- date: 2026-10-04
+- decision:
+  - Execution: `POST /api/forecast/projects/:id/forecasts` validates the
+    request as before, then loads the latest plan of the current model
+    (`model_plans`). No model or no plan is 409 `model_not_compiled`. The
+    stored `plan.v1` has no operators, so the server recompiles the stored
+    model and world with the plan's horizon and mechanism selection. The
+    graph and model hashes must match the stored plan; a mismatch is 500
+    `integrity_error`. A plan that no longer compiles under the current
+    budget is 409 `model_not_compiled`.
+  - Query: the target key is `(plan scenario, target_variable,
+    target_entity_id, k)`. Core `runQuery` runs it exactly at every step
+    k = 1..h, observationally for the baseline and, when interventions are
+    given, as an interventional query. Priors are the model's `initial`. The
+    request's `scenario_id` labels the run and its intervention forecast.
+    The keys stay in the model's scenario, which also labels the baseline.
+    An interventional run defaults to `intervention` and may not reuse the
+    model's scenario name (422). Only hard interventions run. A missing
+    `target_entity_id` resolves when the variable has keys for exactly one
+    entity. Mechanism and policy interventions are 501: the request cannot
+    carry a replacement kernel. Errors are 422:
+    - `out_of_bounds`: h is past the plan horizon;
+    - `unknown_target`: no key at some step;
+    - `out_of_domain_intervention`: a value outside the variable's domain;
+    - `invalid_intervention`: any other surgery error;
+    - `invalid_query`: any other core error.
+    `initial_belief_ref` is recorded, not resolved: there is no belief
+    store yet.
+  - Response (201): the contract's `ForecastRun`, plus `baseline` and
+    `intervention` (per-step distributions, `query_kind`, `effect_status`,
+    queried `model_hash`), `plan_version`, `graph_hash`, `model_hash`,
+    `intervened_model_hash`, `manifest_hash`, `prediction_scope`,
+    `provenance`, `validation_status`, and `uncertainty`.
+    - Provenance lists each kernel with its parameter origin, fitting
+      method, training cutoff, causal basis, and validation status, plus the
+      common value of each or `mixed`.
+    - `effect_status` is `model_based_intervention` or `not_applicable`,
+      never `identified_causal_effect`.
+    - `uncertainty` is `{parameter: "missing", model_error: "missing",
+      method}`. The method is
+      `exact_enumeration_given_hand_specified_kernels` when every kernel is
+      `hand_specified*`. No interval field exists.
+    - The data origin is the weakest origin among the plan's keys
+      (assumed < simulated < extracted < observed). Priors are `assumed`.
+  - Run artifacts: `artifacts/runs/<run_id>/` holds `scenario.json`
+    (request, scope, priors, versions), `interventions.json` (requested,
+    resolved, and core-described surgery, plus the intervened model hash),
+    and `forecasts.json`. Then `manifest.json` is published last. The
+    manifest records:
+    - `repo_sha`: `git rev-parse HEAD`, read once per process, else
+      `unknown`;
+    - the base plan `model_hash`;
+    - `data_cutoff`: the latest evidence availability time or kernel
+      training cutoff, or `none` when there is no data;
+    - `seed` 0 and `random_stream_layout: "exact_enumeration"`;
+    - content hashes of the three files, and the versions and report id.
+    The report is built and validated before anything is written. After
+    the run directory is published, the run and report rows are inserted in
+    one transaction. GET run returns the stored response as is.
+  - Reports: one report per run (`rep_` + 24 hex). Beyond the contract
+    fields it carries query kind, effect status, step minutes, plan/graph/
+    model hashes, the uncertainty object, an `assumptions` section (causal
+    bases, kernels, priors, interventions, notes), and `source_backed`
+    counts kept apart from the assumptions. `nll_bits`, `brier`,
+    `calibration`, `parameter_uncertainty`, and `model_error` are
+    `"missing"`.
+  - Statement policy: every statement starts "In this model," and describes
+    probability mass: one statement per target value at the final step for
+    each scenario, plus baseline-vs-intervention comparisons that say the
+    difference is not an identified causal effect. Example: "In this model,
+    63% of the two-step probability mass is in the resolved state." The
+    serializer rejects statement text that lacks that prefix or contains
+    "chance of", "will be", "likely to", or "real-world". Multiword phrases
+    keep ordinary domain values from tripping the check.
+  - D17 applied in the serializer: an NLL of +∞ is sent as `"+inf"`, and
+    the report row stores the wire form, so JSON never turns it into
+    `null`. NaN, -∞, and a non-finite Brier score are still rejected.
+- why: per-step exact queries are cheap at this size and give the full
+  horizon profile that the report and Step 4 display. Recompiling the plan
+  instead of storing operators keeps one plan format, and the hash check
+  proves the queried plan is the stored one. Publishing the manifest last
+  keeps the run immutable (invariant 11). Statement templates written in
+  model terms are what guide §10.9 allows for an unvalidated model.
+- alternatives: recompiling at the request's horizon (rejected: the model
+  declares sources only for its own horizon, and the plan must be the
+  reviewed one); a 422 for mechanism/policy interventions (rejected: the
+  request is valid, but the feature lacks a kernel field); storing reports
+  as artifacts (deferred: the row plus the immutable run is enough until
+  N10); a single `forecasts[]` list in the run response (rejected: separate
+  `baseline` and `intervention` fields are unambiguous; the report keeps the
+  contract's list).
+- next: wire `"+inf"` into `src/wire.ts` `MetricValue` and add the run
+  response extensions to the frontend contract (N14); add a
+  replacement-kernel reference to mechanism/policy interventions; add an
+  initial-belief store keyed by `initial_belief_ref`.
