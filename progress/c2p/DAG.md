@@ -334,7 +334,7 @@ mutation checks by the worker: removing re-hash-on-read, immutable names, confli
 
 ### N7 — Learning & evaluation
 
-- status: `pending`
+- status: `in-progress`
 - depends: N1, N2 (N5 for forecasts, i.e. N7.4; persistence via N3)
 - substages: N7.1 datasets → N7.2 sparse row fitter → N7.3 scoring/gate contract
   (`learn/datasets.py`, `learn/rows.py`, `compress/scoring.py`, `evaluate/gate.py`;
@@ -347,10 +347,20 @@ mutation checks by the worker: removing re-hash-on-read, immutable names, confli
   - no cutoff, entity/episode, or hyperparameter leakage
   - baselines use the identical split
   - an impossible outcome gives visible infinite NLL/error
-- commits:
-- verifier:
+- commits: N7.1-N7.3 `feat(learn)` datasets/rows/scoring/gate commit; N7.4 backtest pending
+- verifier (run by the orchestrator):
 
 ```text
+$ npx vitest run --project core   (N7.1-N7.3 files)
+ ✓ |core| packages/core/test/learn.rows.test.ts (5 tests) 60ms
+ ✓ |core| packages/core/test/evaluate.gate.test.ts (10 tests) 71ms
+ ✓ |core| packages/core/test/numeric.lgamma.test.ts (8 tests) 85ms
+ ✓ |core| packages/core/test/compress.scoring.test.ts (5 tests) 179ms
+ ✓ |core| packages/core/test/learn.datasets.test.ts (11 tests) 111ms
+ Test Files  22 passed (22)
+      Tests  852 passed (852)
+$ npx tsc -b packages/core packages/core/test -> exit 0
+pending: N7.4 rolling-origin backtest (needs N5)
 ```
 
 ### N8 — Extraction pipeline
