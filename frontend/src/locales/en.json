@@ -1,0 +1,136 @@
+{
+  "app": {
+    "name": "Compression2Prediction",
+    "homeLink": "Compression2Prediction home",
+    "skipToContent": "Skip to content"
+  },
+  "language": {
+    "label": "Language",
+    "en": { "short": "EN", "name": "English" },
+    "zh": { "short": "中文", "name": "中文" }
+  },
+  "common": {
+    "loading": "Loading…",
+    "retry": "Retry",
+    "refresh": "Refresh",
+    "remove": "Remove {name}",
+    "serverUnavailable": {
+      "title": "Server unavailable",
+      "body": "The c2p API server cannot be reached. Start it with npm run dev, then retry."
+    },
+    "timeout": {
+      "title": "Server timed out",
+      "body": "The request took too long. Retry in a moment."
+    },
+    "requestFailed": {
+      "title": "Request failed"
+    }
+  },
+  "home": {
+    "eyebrow": "Compression-based prediction",
+    "description": "Turn documents into a typed world, compress it into finite Markov kernels, and forecast what happens next with explicit uncertainty.",
+    "newProject": {
+      "heading": "New project",
+      "intro": "Name the project, state the question to forecast, and add the source documents.",
+      "name": "Project name",
+      "namePlaceholder": "e.g. Depot incident response",
+      "question": "Prediction question",
+      "questionPlaceholder": "e.g. Is the incident resolved within two hours if an extra crew is sent?",
+      "files": "Source documents",
+      "filesHint": "Plain text, Markdown, JSON, or CSV. Drop files here or choose them.",
+      "browse": "Choose files",
+      "selected": "No files selected | 1 file selected | {count} files selected",
+      "submit": "Create project",
+      "submitting": "Creating…",
+      "errors": {
+        "nameRequired": "Enter a project name.",
+        "questionRequired": "Enter the question to forecast.",
+        "filesRequired": "Add at least one document."
+      }
+    },
+    "projects": {
+      "heading": "Projects",
+      "empty": {
+        "title": "No projects yet",
+        "body": "Create a project to start building its world."
+      },
+      "open": "Open",
+      "createdOn": "Created {date}",
+      "status": {
+        "created": "New",
+        "extracting": "Extracting",
+        "world_ready": "World ready",
+        "model_ready": "Model ready",
+        "failed": "Failed"
+      }
+    }
+  },
+  "process": {
+    "eyebrow": "Project",
+    "backToProjects": "All projects",
+    "loadingProject": "Loading project…",
+    "projectOffline": "Project details could not be loaded. The workflow is shown without server data.",
+    "stepper": "Workflow steps",
+    "stepOf": "STEP {n} / {total}",
+    "steps": {
+      "world": {
+        "name": "World build",
+        "description": "Upload documents, run the extraction task, and review the typed world graph. World entities and agent candidates are counted separately."
+      },
+      "model": {
+        "name": "Model setup",
+        "description": "Review the variable registry and the mechanisms, compile the model, and check its diagnostics and agent eligibility."
+      },
+      "forecast": {
+        "name": "Forecast & simulate",
+        "description": "Define scenarios with half-open interventions, run forecasts, and follow run progress."
+      },
+      "report": {
+        "name": "Report",
+        "description": "Read outcome distributions by horizon, baseline against intervention, NLL and Brier scores, and validation status. Absent calibration reads \"missing\", never a number."
+      },
+      "interaction": {
+        "name": "Interaction",
+        "description": "Ask what-if questions, inspect mechanisms, and explore rank and influence diagnostics."
+      }
+    },
+    "status": {
+      "complete": "Complete",
+      "current": "Current",
+      "available": "Available",
+      "locked": "Locked"
+    },
+    "next": "Next step",
+    "previous": "Previous step",
+    "nextLocked": "Complete this step to continue.",
+    "finished": "All steps are complete.",
+    "placeholder": "This panel is a placeholder. Its controls arrive in a later build.",
+    "dev": {
+      "label": "Dev control",
+      "markComplete": "Mark step complete",
+      "marked": "Marked complete"
+    },
+    "graph": {
+      "label": "World graph",
+      "placeholder": "The world graph panel will render here."
+    }
+  },
+  "report": {
+    "title": "Report",
+    "idLabel": "Report",
+    "description": "Forecast distributions, baseline against intervention, and validation status for one report.",
+    "placeholder": "Report rendering arrives with the step 4 build."
+  },
+  "interaction": {
+    "title": "Interaction",
+    "idLabel": "Report",
+    "description": "What-if queries, the mechanism inspector, and rank and influence views for one report.",
+    "placeholder": "Interactive tools arrive with the step 5 build."
+  },
+  "notFound": {
+    "code": "404",
+    "title": "Page not found",
+    "body": "Nothing lives at {path}.",
+    "home": "Back to projects"
+  }
+}

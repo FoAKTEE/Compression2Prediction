@@ -2,7 +2,7 @@
   "name": "frontend",
   "version": "0.1.0",
   "private": true,
-  "description": "c2p web frontend (Vue 3 + Vite). Placeholder until node N12.",
+  "description": "c2p web frontend: Vue 3 + Vite + vue-router + vue-i18n (en, zh) + axios + d3.",
   "license": "MIT",
   "type": "module",
   "scripts": {
@@ -11,6 +11,13 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "vue": "^3.5.43"
+    "axios": "^1.20.0",
+    "d3": "^7.9.0",
+    "vue": "^3.5.43",
+    "vue-i18n": "^11.4.13",
+    "vue-router": "^5.3.1"
+  },
+  "devDependencies": {
+    "@types/d3": "^7.4.3"
   }
 }

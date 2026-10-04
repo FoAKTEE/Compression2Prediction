@@ -1,0 +1,231 @@
+/* Element defaults and a few shared utility classes. */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  min-width: 0;
+  background: var(--c2p-bg);
+  color: var(--c2p-text);
+  font-family: var(--c2p-font-sans);
+  font-size: var(--c2p-text-md);
+  line-height: 1.55;
+}
+
+h1,
+h2,
+h3,
+p,
+ol,
+ul {
+  margin: 0;
+}
+
+ol,
+ul {
+  padding: 0;
+  list-style: none;
+}
+
+a {
+  color: inherit;
+  text-underline-offset: 0.2em;
+}
+
+img,
+svg {
+  display: block;
+  max-width: 100%;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--c2p-focus);
+  outline-offset: 2px;
+}
+
+/* Shared utilities */
+.mono {
+  font-family: var(--c2p-font-mono);
+  letter-spacing: var(--c2p-tracking-mono);
+}
+
+.eyebrow {
+  font-family: var(--c2p-font-mono);
+  font-size: var(--c2p-text-xs);
+  letter-spacing: var(--c2p-tracking-mono);
+  text-transform: uppercase;
+  color: var(--c2p-text-muted);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2.25rem;
+  padding: 0.15rem 0.45rem;
+  border: var(--c2p-rule-width) solid var(--c2p-rule-strong);
+  border-radius: var(--c2p-radius);
+  font-family: var(--c2p-font-mono);
+  font-size: var(--c2p-text-xs);
+  font-weight: 600;
+  letter-spacing: var(--c2p-tracking-mono);
+  line-height: 1.4;
+}
+
+.badge--solid {
+  background: var(--c2p-ink);
+  color: var(--c2p-ink-contrast);
+}
+
+/* Buttons */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--c2p-space-2);
+  min-height: 2.5rem;
+  padding: 0 var(--c2p-space-4);
+  border: var(--c2p-rule-width) solid var(--c2p-rule-strong);
+  border-radius: var(--c2p-radius);
+  background: transparent;
+  font-family: var(--c2p-font-mono);
+  font-size: var(--c2p-text-sm);
+  letter-spacing: var(--c2p-tracking-mono);
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    background var(--c2p-transition),
+    color var(--c2p-transition);
+}
+
+.btn:hover:not(:disabled) {
+  background: var(--c2p-surface);
+}
+
+.btn--primary {
+  background: var(--c2p-ink);
+  color: var(--c2p-ink-contrast);
+}
+
+.btn--primary:hover:not(:disabled) {
+  background: var(--c2p-text-muted);
+}
+
+.btn--quiet {
+  border-color: transparent;
+  color: var(--c2p-text-muted);
+}
+
+.btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+/* Form fields */
+.field {
+  display: grid;
+  gap: var(--c2p-space-2);
+}
+
+.field__label {
+  font-family: var(--c2p-font-mono);
+  font-size: var(--c2p-text-xs);
+  letter-spacing: var(--c2p-tracking-mono);
+  text-transform: uppercase;
+}
+
+.field__input {
+  width: 100%;
+  min-width: 0;
+  padding: var(--c2p-space-3);
+  border: var(--c2p-rule-width) solid var(--c2p-rule);
+  border-radius: var(--c2p-radius);
+  background: var(--c2p-bg);
+  transition: border-color var(--c2p-transition);
+}
+
+.field__input:hover,
+.field__input:focus {
+  border-color: var(--c2p-rule-strong);
+}
+
+.field__input::placeholder {
+  color: var(--c2p-text-faint);
+}
+
+.field__error {
+  color: var(--c2p-danger);
+  font-size: var(--c2p-text-sm);
+}
+
+/* Panels: a thin top rule, a numbered badge, and a heading */
+.panel {
+  display: grid;
+  gap: var(--c2p-space-5);
+  align-content: start;
+  min-width: 0;
+  padding-top: var(--c2p-space-4);
+  border-top: var(--c2p-rule-width) solid var(--c2p-rule-strong);
+}
+
+.panel__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--c2p-space-3);
+  min-height: 2.5rem;
+}
+
+.panel__title {
+  font-size: var(--c2p-text-lg);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.panel__action {
+  margin-left: auto;
+}
+
+/* Page frame */
+.page {
+  width: 100%;
+  max-width: var(--c2p-max-width);
+  margin: 0 auto;
+  padding: var(--c2p-space-6) var(--c2p-gutter) var(--c2p-space-8);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition: none !important;
+  }
+}

@@ -1,0 +1,136 @@
+{
+  "app": {
+    "name": "Compression2Prediction",
+    "homeLink": "Compression2Prediction 首页",
+    "skipToContent": "跳到主要内容"
+  },
+  "language": {
+    "label": "语言",
+    "en": { "short": "EN", "name": "English" },
+    "zh": { "short": "中文", "name": "中文" }
+  },
+  "common": {
+    "loading": "加载中…",
+    "retry": "重试",
+    "refresh": "刷新",
+    "remove": "移除 {name}",
+    "serverUnavailable": {
+      "title": "服务器不可用",
+      "body": "无法连接 c2p API 服务器。请运行 npm run dev 启动服务器后重试。"
+    },
+    "timeout": {
+      "title": "服务器响应超时",
+      "body": "请求耗时过长，请稍后重试。"
+    },
+    "requestFailed": {
+      "title": "请求失败"
+    }
+  },
+  "home": {
+    "eyebrow": "基于压缩的预测",
+    "description": "将文档转化为类型化世界，把它压缩为有限马尔可夫核，并在明确的不确定性下预测接下来会发生什么。",
+    "newProject": {
+      "heading": "新建项目",
+      "intro": "为项目命名，写下要预测的问题，并添加源文档。",
+      "name": "项目名称",
+      "namePlaceholder": "例如：仓库事故响应",
+      "question": "预测问题",
+      "questionPlaceholder": "例如：如果增派一组人员，事故能否在两小时内解决？",
+      "files": "源文档",
+      "filesHint": "支持纯文本、Markdown、JSON 或 CSV。可将文件拖到此处，或点击选择。",
+      "browse": "选择文件",
+      "selected": "未选择文件 | 已选择 1 个文件 | 已选择 {count} 个文件",
+      "submit": "创建项目",
+      "submitting": "创建中…",
+      "errors": {
+        "nameRequired": "请输入项目名称。",
+        "questionRequired": "请输入要预测的问题。",
+        "filesRequired": "请至少添加一个文档。"
+      }
+    },
+    "projects": {
+      "heading": "项目",
+      "empty": {
+        "title": "暂无项目",
+        "body": "创建一个项目，开始构建它的世界。"
+      },
+      "open": "打开",
+      "createdOn": "创建于 {date}",
+      "status": {
+        "created": "新建",
+        "extracting": "抽取中",
+        "world_ready": "世界已就绪",
+        "model_ready": "模型已就绪",
+        "failed": "失败"
+      }
+    }
+  },
+  "process": {
+    "eyebrow": "项目",
+    "backToProjects": "全部项目",
+    "loadingProject": "正在加载项目…",
+    "projectOffline": "无法加载项目详情。下面显示的是不含服务器数据的流程。",
+    "stepper": "流程步骤",
+    "stepOf": "步骤 {n} / {total}",
+    "steps": {
+      "world": {
+        "name": "世界构建",
+        "description": "上传文档，运行抽取任务，并审阅类型化世界图。世界实体数与智能体候选数分别统计。"
+      },
+      "model": {
+        "name": "模型设置",
+        "description": "审阅变量注册表与机制，编译模型，并检查诊断信息与智能体资格。"
+      },
+      "forecast": {
+        "name": "预测与模拟",
+        "description": "定义带半开区间干预的情景，运行预测，并跟踪运行进度。"
+      },
+      "report": {
+        "name": "报告",
+        "description": "查看各预测步长的结果分布、基线与干预的对比、NLL 与 Brier 分数以及验证状态。缺失的校准显示为“missing”，绝不显示为数字。"
+      },
+      "interaction": {
+        "name": "交互",
+        "description": "提出假设性问题，检查机制，并探索排序与影响力诊断。"
+      }
+    },
+    "status": {
+      "complete": "已完成",
+      "current": "当前",
+      "available": "可访问",
+      "locked": "未解锁"
+    },
+    "next": "下一步",
+    "previous": "上一步",
+    "nextLocked": "完成此步骤后才能继续。",
+    "finished": "所有步骤均已完成。",
+    "placeholder": "此面板为占位内容，相关控件将在后续版本中提供。",
+    "dev": {
+      "label": "开发控件",
+      "markComplete": "标记此步骤完成",
+      "marked": "已标记完成"
+    },
+    "graph": {
+      "label": "世界图",
+      "placeholder": "世界图面板将在此处呈现。"
+    }
+  },
+  "report": {
+    "title": "报告",
+    "idLabel": "报告",
+    "description": "单份报告的预测分布、基线与干预的对比以及验证状态。",
+    "placeholder": "报告内容将随第 4 步的实现一并提供。"
+  },
+  "interaction": {
+    "title": "交互",
+    "idLabel": "报告",
+    "description": "针对单份报告的假设性查询、机制检查器以及排序与影响力视图。",
+    "placeholder": "交互工具将随第 5 步的实现一并提供。"
+  },
+  "notFound": {
+    "code": "404",
+    "title": "页面不存在",
+    "body": "{path} 处没有内容。",
+    "home": "返回项目列表"
+  }
+}

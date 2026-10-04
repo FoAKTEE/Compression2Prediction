@@ -381,7 +381,7 @@ $ python3 -m pytest tests/test_causal_registry.py
 
 ### N12 — Frontend scaffold
 
-- status: `pending`
+- status: `done`
 - depends: N0b
 - substages: none (single node; no memo §4.4 row). `frontend/`: Vue 3 + Vite +
   vue-router + vue-i18n (en, zh) + axios + d3; Home and Process (STEP 01–05 shell);
@@ -390,10 +390,21 @@ $ python3 -m pytest tests/test_causal_registry.py
   - `npm run build -w frontend` passes
   - vitest + @vue/test-utils smoke tests
   - no MiroFish code copied (AGPL)
-- commits:
-- verifier:
+- commits: the `feat(frontend)` scaffold commit
+- verifier (run by the orchestrator):
 
 ```text
+$ npx vitest run --project frontend
+ Test Files  9 passed (9)
+      Tests  46 passed (46)
+$ npx vue-tsc --noEmit -p frontend   -> exit 0
+$ npm run build -w frontend
+dist/index.html                   0.60 kB │ gzip:  0.35 kB
+dist/assets/index-CHnZZZuU.css   17.02 kB │ gzip:  3.58 kB
+dist/assets/index-B-b0iXuz.js   220.28 kB │ gzip: 80.70 kB
+✓ built in 1.32s
+$ grep for MiroFish identifiers/strings in frontend/src (next-step-btn, step-badge, MiroFish, 图谱构建, 群体智能) -> 0 files
+$ headless screenshots: Home 1280px, Process 1280px and 375px rendered; server-unavailable states shown
 ```
 
 ### N13 — GraphPanel
