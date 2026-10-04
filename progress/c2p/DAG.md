@@ -384,7 +384,7 @@ pending: N7.4 rolling-origin backtest (needs N5)
 
 ### N8 — Extraction pipeline
 
-- status: `pending`
+- status: `done`
 - depends: N2, N3
 - substages: no numbered memo substages; memo §4.4 consumer row: strict boundary
   validation → selection/logging (`extract/validation.py`; memo test `test_boundary_schemas`).
@@ -393,10 +393,15 @@ pending: N7.4 rolling-origin backtest (needs N5)
   - the six-entity fixture (2 people, 1 org, 1 meeting, 1 location, 1 document) keeps all six
   - only eligible actors are emitted as agent candidates
   - world count and agent count are separate outputs
-- commits:
-- verifier:
+- commits: the `feat(extract)` extraction pipeline commit
+- verifier (run by the orchestrator):
 
 ```text
+$ npx vitest run packages/server/test/extract.*.test.ts
+ Test Files  4 passed (4)
+      Tests  41 passed (41)
+$ npx tsc -b -> exit 0
+acceptance: six-entity document keeps all 6 entities with kinds and evidence spans; none eligible; world count 6 vs agent count 0; agent_eligible:true in a reply ignored; prompt injection changes nothing; same-name people in different chunks stay distinct with a candidate alias
 ```
 
 ### N9 — Simulation adapter (observer)
